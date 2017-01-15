@@ -3,6 +3,7 @@ if sys.version_info >= (3, 0):
     import builtins
 else:
     import __builtin__ as builtins
+import math
 
 from panda3d.core import *
 from direct.filter.FilterManager import *
@@ -251,6 +252,43 @@ class DeferredRenderer():
         self.quad_stage1.setShaderInput('light_color', color)
         self.quad_stage1.setShaderInput('direction', direction)
 
+    def addConeLight(self, color, pos=(0,0,0), hpr=(0,0,0), radius=1.0, fov=45.0, model_size_margin=1.0):
+        if fov >179.0:
+            fov=179.0
+        xy_scale=math.tan(deg2Rad(fov*0.5))
+        model=loader.loadModel("volume/cone")
+
+        #temp=model.copyTo(self.plain_root)
+
+        self.lights.append(model)
+        self.lights[-1].reparentTo(self.light_root)
+        self.lights[-1].setScale(xy_scale, 1.0, xy_scale)
+        self.lights[-1].flattenStrong()
+        self.lights[-1].setScale(radius*model_size_margin)
+        self.lights[-1].setPos(pos)
+        self.lights[-1].setHpr(hpr)
+        #debug=self.lights[-1].copyTo(self.plain_root)
+        self.lights[-1].setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
+        self.lights[-1].setAttrib(CullFaceAttrib.make(CullFaceAttrib.MCullCounterClockwise))
+        self.lights[-1].setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
+        self.lights[-1].setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
+
+        self.lights[-1].setShader((Shader.load(Shader.SLGLSL, 'shaders/spot_light_v.glsl', 'shaders/spot_light_f.glsl')))
+        self.lights[-1].setShaderInput("light_radius", float(radius))
+        self.lights[-1].setShaderInput("light_pos", Vec4(pos,1.0))
+        self.lights[-1].setShaderInput("light_fov", deg2Rad(fov))
+        self.lights[-1].setShaderInput("light_pos", Vec4(pos,1.0))
+        p3d_light = render.attachNewNode(Spotlight("Spotlight"))
+        p3d_light.setPos(render, pos)
+        p3d_light.setHpr(render, hpr)
+        p3d_light.node().set_shadow_caster(True, 256, 256)
+        #p3d_light.node().setCameraMask(self.modelMask)
+        self.lights[-1].setShaderInput("spot", p3d_light)
+        #p3d_light.node().showFrustum()
+        p3d_light.node().getLens().setFov(fov)
+        p3d_light.node().getLens().setFar(radius)
+        p3d_light.node().getLens().setNear(1.0)
+
     def addLight(self, color, model="volume/sphere", pos=(0,0,0), radius=1.0):
         #light geometry
         if not isinstance(model, NodePath): #if we got a NodePath we use it as the geom for the light
@@ -265,7 +303,7 @@ class DeferredRenderer():
         self.lights[-1].setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
         #shader inpts
         self.lights[-1].setShaderInput("light", Vec4(color,radius*radius))
-        self.lights[-1].setShaderInput("light_pos", Vec4(pos,0.0))
+        self.lights[-1].setShaderInput("light_pos", Vec4(pos,1.0))
 
         p3d_light = render.attachNewNode(PointLight("PointLight"))
         p3d_light.setPos(render, pos)

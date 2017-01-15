@@ -1,5 +1,5 @@
 from panda3d.core import *
-#loadPrcFileData("", "show-buffers 1")
+loadPrcFileData("", "show-buffers 1")
 loadPrcFileData("", "shadow-depth-bits 32")
 loadPrcFileData("", "depth-bits 32")
 loadPrcFileData('','framebuffer-srgb true')
@@ -22,10 +22,11 @@ class Demo(DirectObject):
         defered_render=self.renderer.geometry_root
 
         column=loader.loadModel("models/column")
+        column.setPos(0.5,0.5,-4)
         column.reparentTo(defered_render)
         #column.setTransparency(TransparencyAttrib.MNone, 1)
         box=loader.loadModel("models/box2")
-        box.setPos(2,2,0)
+        box.setPos(2,2,-4)
         box.setH(45)
         #box.setAttrib(CullFaceAttrib.make(CullFaceAttrib.MCullNone))
         box.reparentTo(defered_render)
@@ -34,20 +35,14 @@ class Demo(DirectObject):
         #box.setTransparency(TransparencyAttrib.MBinary, 1)
 
         frowney=loader.loadModel('frowney')
-        frowney.setPos(-2, -2, 0.9)
+        frowney.setPos(-2, -1, -3)
         frowney.setH(90)
         frowney.reparentTo(defered_render)
 
 
-        self.renderer.setDirectionalLight(Vec3(0, 0, 0), Vec3(0, 0.25, 1.0))
-        #renderer.addLight(color=(0.5,0.5,0.5), pos=(2,2,2), radius=5.0)
-        self.renderer.addLight(color=(0.3,0.3,0.4), pos=(2,-1,3), radius=9.0)
-        #self.renderer.addLight(color=(0.94,0.94,0.94), pos=(2,2,4), radius=10.0)
-        #renderer.addLight(color=(0,0.5,0), pos=(3,3,5),radius=6.0)
-        self.renderer.addLight(color=(0.4,0.4,0.3), pos=(-2,2,3),radius=7.0)
-        #self.renderer.addLight(color=(0.2,0.2,0.2), pos=(0,0,10),radius=20.0)
-
-
+        self.renderer.setDirectionalLight(Vec3(0.06, 0.06, 0.07), Vec3(0, 0.25, 1.0))
+        self.renderer.addConeLight(color=(0.8, 0.8, 0.8), pos=(0,-4,1), hpr=(0,-60,0), radius=15.0, fov=60.0)
+        #self.renderer.addLight(color=(0.3,0.3,0.5), pos=(2,2,2), radius=9.0)
 
 d=Demo()
 base.run()

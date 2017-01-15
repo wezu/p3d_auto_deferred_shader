@@ -6,7 +6,6 @@ in vec3 p3d_Normal;
 uniform mat4 p3d_ModelViewProjectionMatrix;
 uniform mat3 p3d_NormalMatrix;
 uniform mat4 p3d_ModelViewMatrix;
-uniform mat4 trans_model_to_shadowcaster;
 
 out vec3 N;
 out vec3 V;

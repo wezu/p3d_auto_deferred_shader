@@ -2,26 +2,33 @@
 #version 140
 struct p3d_LightSourceParameters
     {
+    vec4 color;
     vec4 position;
-    samplerCube shadowMap;
+    vec3 spotDirection;
+    float spotExponent;
+    float spotCutoff;
+    float spotCosCutoff;
+    sampler2DShadow shadowMap;
+    mat4 shadowMatrix;
     };
-uniform p3d_LightSourceParameters shadowcaster;
+uniform p3d_LightSourceParameters spot;
 uniform mat4 p3d_ProjectionMatrixInverse;
 uniform mat4 p3d_ViewProjectionMatrixInverse;
 uniform mat4 p3d_ViewMatrix;
 uniform mat4 p3d_ModelViewMatrix;
+uniform mat4  trans_render_to_clip_of_spot;
 uniform sampler2D albedo_tex;
 uniform sampler2D normal_tex;
 uniform sampler2D depth_tex;
 
-uniform mat4 trans_render_to_shadowcaster;
+//uniform mat4 trans_render_to_shadowcaster;
 
-uniform vec4 light;
-uniform vec4 light_pos;
 uniform vec2 win_size;
-
-uniform float near;
-uniform float bias;
+uniform float light_radius;
+uniform float light_fov;
+uniform vec4 light_pos;
+//uniform float near;
+//uniform float bias;
 
 in vec3 N;
 in vec3 V;
@@ -68,41 +75,44 @@ void main()
     float glow=normal_glow_gloss.b;
     float depth=texture(depth_tex,uv).r * 2.0 - 1.0;
 
-    //vec4 light_view_pos=p3d_ViewMatrix*vec4(light_pos.xyz, 1.0);
-    vec4 light_view_pos=shadowcaster.position;
+    //vec4 light_view_pos=spot.position;
 
     vec4 view_pos = p3d_ProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
     view_pos.xyz /= view_pos.w;
 
+    //vec3 light_vec = -normalize(spot.spotDirection);
+    vec3 light_vec = normalize(spot.position.xyz-view_pos.xyz);
 
-    vec3 light_color=light.rgb;
-    float light_radius=light.w;
     //diffuse
-    vec3 light_vec = normalize(light_view_pos.xyz-view_pos.xyz);
-    float attenuation=1.0-(pow(distance(view_pos.xyz, light_view_pos.xyz), 2.0)/light_radius);
-    //attenuation*=pow(dot(normalize(N),normalize(V)), 2.0);
-    //attenuation=clamp(attenuation, 0.0, 1.0);
-    color+=light_color*max(dot(normal.xyz,light_vec), 0.0)*attenuation;
+    float attenuation=1.0-(pow(distance(view_pos.xyz, spot.position.xyz)/light_radius, 8.0));
+    float spotEffect = dot(normalize(spot.spotDirection), -light_vec);
+    float falloff=0.0;
+    if (spotEffect > spot.spotCosCutoff)
+      falloff = pow(spotEffect, 12.0);
+    attenuation*=falloff;
+
+    color+=spot.color.rgb*max(dot(normal.xyz,light_vec), 0.0)*falloff*attenuation;
     //spec
     vec3 view_vec = normalize(-view_pos.xyz);
     vec3 reflect_vec=normalize(reflect(light_vec,normal.xyz));
-    float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*attenuation*gloss;
+    float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss*attenuation;
 
-    vec4 final=vec4((color*albedo)+light_color*spec, spec+gloss);
+    vec4 final=vec4((color*albedo), 0.0);
 
     //shadows
+    //the fragment world pos reconstructed from depth:
     vec4 world_pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
     world_pos.xyz /= world_pos.w;
-    world_pos.xyz-=light_pos.xyz;
-    vec4 shadow_uv=trans_render_to_shadowcaster*world_pos;
-    float ldist = max(abs(shadow_uv.x), max(abs(shadow_uv.y), abs(shadow_uv.z)));
-    ldist = ((light_radius+near)/(light_radius-near))+((-2.0*light_radius*near)/(ldist * (light_radius-near)));
-    float shadow= float(texture(shadowcaster.shadowMap, shadow_uv.xyz).r >= (ldist * 0.5 + 0.5)+bias);
-    //float shadow= texture(shadowcaster.shadowMap, shadow_uv.xyz).r;
+    world_pos.xyz-=light_pos.xyz;//move the pos to the position of the light source???
+    vec4 shadow_uv=trans_render_to_clip_of_spot*world_pos;//transform the post to the clip space of the light
+    //do voodoo???
+    shadow_uv.xy*=0.5; //idk?
+    shadow_uv.xy+=2.0; //huh?
+    //...missing step???
+    //shadow lookup
+    float shadow= textureProj(spot.shadowMap, shadow_uv, 0.01);
+
     final*=shadow;
 
-    //final.rgb+=albedo*glow;
-
     gl_FragData[0]=final;
-    //gl_FragData[0]=vec4(shadow, shadow, shadow, 1.0);
     }
