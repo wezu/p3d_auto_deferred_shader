@@ -1,5 +1,11 @@
 //GLSL
 #version 140
+struct p3d_LightSourceParameters
+    {
+    vec4 position;
+    samplerCube shadowMap;
+    };
+uniform p3d_LightSourceParameters shadowcaster;
 uniform mat4 p3d_ProjectionMatrixInverse;
 uniform mat4 p3d_ViewProjectionMatrixInverse;
 uniform mat4 p3d_ViewMatrix;
@@ -8,9 +14,14 @@ uniform sampler2D albedo_tex;
 uniform sampler2D normal_tex;
 uniform sampler2D depth_tex;
 
+uniform mat4 trans_render_to_shadowcaster;
+
 uniform vec4 light;
 uniform vec4 light_pos;
 uniform vec2 win_size;
+
+uniform float near;
+uniform float bias;
 
 in vec3 N;
 in vec3 V;
@@ -57,8 +68,8 @@ void main()
     float glow=normal_glow_gloss.b;
     float depth=texture(depth_tex,uv).r * 2.0 - 1.0;
 
-    vec4 light_view_pos=p3d_ViewMatrix*vec4(light_pos.xyz, 1.0);
-    //vec4 light_view_pos=shadowcaster.position;
+    //vec4 light_view_pos=p3d_ViewMatrix*vec4(light_pos.xyz, 1.0);
+    vec4 light_view_pos=shadowcaster.position;
 
     vec4 view_pos = p3d_ProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
     view_pos.xyz /= view_pos.w;
@@ -79,7 +90,19 @@ void main()
 
     vec4 final=vec4((color*albedo)+light_color*spec, spec+gloss);
 
+    //shadows
+    vec4 world_pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
+    world_pos.xyz /= world_pos.w;
+    world_pos.xyz-=light_pos.xyz;
+    vec4 shadow_uv=trans_render_to_shadowcaster*world_pos;
+    float ldist = max(abs(shadow_uv.x), max(abs(shadow_uv.y), abs(shadow_uv.z)));
+    ldist = ((light_radius+near)/(light_radius-near))+((-2.0*light_radius*near)/(ldist * (light_radius-near)));
+    float shadow= float(texture(shadowcaster.shadowMap, shadow_uv.xyz).r >= (ldist * 0.5 + 0.5)+bias);
+    //float shadow= texture(shadowcaster.shadowMap, shadow_uv.xyz).r;
+    final*=shadow;
+
     //final.rgb+=albedo*glow;
 
     gl_FragData[0]=final;
+    //gl_FragData[0]=vec4(shadow, shadow, shadow, 1.0);
     }

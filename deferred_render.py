@@ -149,7 +149,7 @@ class DeferredRenderer():
         self.quad_stage0.setShaderInput("intensity", 10.0)
         self.quad_stage0.setShaderInput("scale", 0.9)
         self.quad_stage0.setShaderInput("bias", 0.4)
-        self.quad_stage0.setShaderInput("fade_distance", 100.0)
+        self.quad_stage0.setShaderInput("fade_distance", 80.0)
         self.quad_stage0.setShaderInput('win_size', Vec2(base.win.getXSize()*1.0, base.win.getYSize()*1.0))
         self.quad_stage0.setShaderInput('camera', base.cam)
 
@@ -163,39 +163,55 @@ class DeferredRenderer():
         self.quad_stage1.setShaderInput('light_color', Vec3(0,0,0))
         self.quad_stage1.setShaderInput('direction', Vec3(0,0,0))
 
-        self.quad_stage2, self.tex_stage2 = self.makeFilterStage(6, size=0.5)
-        self.quad_stage2.setShader(Shader.load(Shader.SLGLSL, 'shaders/ssr_v.glsl', 'shaders/ssr_f.glsl'))
-        self.quad_stage2.setShaderInput("color_tex", self.tex_stage1)
-        self.quad_stage2.setShaderInput("normal_tex", self.normal)
+        self.quad_stage2, self.tex_stage2 = self.makeFilterStage(sort=8, clear_color=(0.0, 0.0, 1.0, 0.0))
+        self.quad_stage2.setShader(Shader.load(Shader.SLGLSL, 'shaders/fog_v.glsl', 'shaders/fog_f.glsl'))
+        self.quad_stage2.setShaderInput("lit_tex", self.tex_stage1)
         self.quad_stage2.setShaderInput("depth_tex", self.depth)
-        self.quad_stage2.setShaderInput('win_size', Vec2(base.win.getXSize()*0.5, base.win.getYSize()*0.5))
+        self.quad_stage2.setShaderInput("fog_color", Vec4(0.1, 0.1, 0.1, 0.0))
+        self.quad_stage2.setShaderInput("fog_config", Vec4(1.0, 100.0, 2.0, 1.0)) #start, stop, power, mix
+        self.quad_stage2.setShaderInput("dof_near", 0.7)
+        self.quad_stage2.setShaderInput("dof_far", 60.0)
         self.quad_stage2.setShaderInput('camera', base.cam)
 
-        self.quad_stage3, self.tex_stage3 = self.makeFilterStage(7, size=0.5)
-        self.quad_stage3.setShader(Shader.load(Shader.SLGLSL, 'shaders/bloom_v.glsl', 'shaders/bloom_f.glsl'))
+        self.quad_stage3, self.tex_stage3 = self.makeFilterStage(6, size=0.5)
+        self.quad_stage3.setShader(Shader.load(Shader.SLGLSL, 'shaders/ssr_v.glsl', 'shaders/ssr_f.glsl'))
         self.quad_stage3.setShaderInput("color_tex", self.tex_stage1)
         self.quad_stage3.setShaderInput("normal_tex", self.normal)
-        self.quad_stage3.setShaderInput("glow_power", 5.0)
+        self.quad_stage3.setShaderInput("depth_tex", self.depth)
+        self.quad_stage3.setShaderInput('win_size', Vec2(base.win.getXSize()*0.5, base.win.getYSize()*0.5))
+        self.quad_stage3.setShaderInput('camera', base.cam)
 
-        self.quad_stage4, self.tex_stage4 = self.makeFilterStage(8, size=0.5)
-        self.quad_stage4.setShader(Shader.load(Shader.SLGLSL, 'shaders/blur_v.glsl', 'shaders/blur_f.glsl'))
-        self.quad_stage4.setShaderInput("input_map", self.tex_stage3)
-        self.quad_stage4.setShaderInput("blur", 3.0)
+        self.quad_stage4, self.tex_stage4 = self.makeFilterStage(7, size=0.5)
+        self.quad_stage4.setShader(Shader.load(Shader.SLGLSL, 'shaders/bloom_v.glsl', 'shaders/bloom_f.glsl'))
+        self.quad_stage4.setShaderInput("color_tex", self.tex_stage1)
+        self.quad_stage4.setShaderInput("normal_tex", self.normal)
+        self.quad_stage4.setShaderInput("glow_power", 5.0)
+
+        self.quad_stage5, self.tex_stage5 = self.makeFilterStage(8, size=0.5)
+        self.quad_stage5.setShader(Shader.load(Shader.SLGLSL, 'shaders/blur_v.glsl', 'shaders/blur_f.glsl'))
+        self.quad_stage5.setShaderInput("input_map", self.tex_stage4)
+        self.quad_stage5.setShaderInput("blur", 3.0)
 
         self.quad_stage6, self.tex_stage6 = self.makeFilterStage(9)
         self.quad_stage6.setShader(Shader.load(Shader.SLGLSL, 'shaders/mix_v.glsl', 'shaders/mix_f.glsl'))
-        self.quad_stage6.setShaderInput("ssr_tex", self.tex_stage2)
+        self.quad_stage6.setShaderInput("ssr_tex", self.tex_stage3)
         self.quad_stage6.setShaderInput("ao_tex", self.tex_stage0)
-        self.quad_stage6.setShaderInput("lit_tex", self.tex_stage1)
-        self.quad_stage6.setShaderInput("bloom_tex", self.tex_stage4)
+        self.quad_stage6.setShaderInput("lit_tex", self.tex_stage2)
+        self.quad_stage6.setShaderInput("bloom_tex", self.tex_stage5)
         self.quad_stage6.setShaderInput("lut_tex", loader.loadTexture('data/lut_v1.png'))
         self.quad_stage6.setShaderInput("noise_tex", loader.loadTexture('data/noise.png'))
         self.quad_stage6.setShaderInput("forward_tex", self.plain_tex)
         self.quad_stage6.setShaderInput('win_size', Vec2(base.win.getXSize()*1.0, base.win.getYSize()*1.0))
 
+        self.quad_stage7, self.tex_stage7 = self.makeFilterStage(8)
+        self.quad_stage7.setShader(Shader.load(Shader.SLGLSL, 'shaders/dof_v.glsl', 'shaders/dof_f.glsl'))
+        self.quad_stage7.setShaderInput("input_map", self.tex_stage6)
+        self.quad_stage7.setShaderInput("blur", 8.0)
+
+
         self.final_card.reparentTo(render2d)
         self.final_card.setShader(Shader.load(Shader.SLGLSL, 'shaders/fxaa_v.glsl', 'shaders/fxaa_f.glsl'))
-        self.final_card.setShaderInput('tex0', self.tex_stage6)
+        self.final_card.setShaderInput('tex0', self.tex_stage7)
         self.final_card.setShaderInput('win_size', Vec2(base.win.getXSize(), base.win.getYSize()))
         self.final_card.setShaderInput('FXAA_SPAN_MAX' , float(2.0))
         self.final_card.setShaderInput('FXAA_REDUCE_MUL', float(1.0/16.0))
@@ -203,7 +219,7 @@ class DeferredRenderer():
 
         taskMgr.add(self.update, 'update_tsk')
 
-    def makeFilterStage(self, sort=0, size=1.0):
+    def makeFilterStage(self, sort=0, size=1.0, clear_color=None):
         #make a root for the buffer
         root=NodePath("filterBufferRoot")
         tex=Texture()
@@ -214,6 +230,9 @@ class DeferredRenderer():
         buff=base.win.makeTextureBuffer("buff", buff_size_x, buff_size_y, tex)
         #buff.setSort(sort)
         buff.setSort(0)
+        if clear_color:
+            buff.setClearColor(clear_color)
+            buff.setClearActive(GraphicsOutput.RTPColor, True)
         cam=base.makeCamera(win=buff)
         cam.reparentTo(root)
         cam.setPos(buff_size_x*0.5,buff_size_y*0.5,100)

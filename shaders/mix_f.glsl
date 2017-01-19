@@ -8,6 +8,7 @@ uniform sampler2D ao_tex;
 uniform sampler2D ssr_tex;
 uniform sampler2D forward_tex;
 uniform sampler2D bloom_tex;
+uniform sampler2D blur_tex;
 uniform sampler2D noise_tex;
 uniform vec2 win_size;
 
@@ -33,6 +34,7 @@ void main()
     float ao=texture(ao_tex,uv).r;
     vec4 ssr=texture(ssr_tex,uv);
     vec4 bloom=texture(bloom_tex,uv);
+    vec4 blur=texture(blur_tex,uv);
     vec4 noise=texture(noise_tex,win_size*uv/64.0);
 
     vec3 final_color=mix(color.rgb,color_forward.rgb, color_forward.a);
@@ -47,6 +49,6 @@ void main()
 
     final_color+= ((noise.r + noise.g)-0.5)/255.0;
 
-    gl_FragData[0]=vec4(final_color.rgb, 1.0);
+    gl_FragData[0]=vec4(final_color.rgb, color.a);
     //gl_FragData[0]=vec4(ao, ao, ao, 1.0);
     }

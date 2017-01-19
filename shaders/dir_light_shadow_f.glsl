@@ -1,20 +1,15 @@
 //GLSL
 #version 140
-uniform mat4 p3d_ProjectionMatrixInverse;
-uniform mat4 p3d_ViewProjectionMatrixInverse;
-uniform mat4 p3d_ViewMatrix;
-uniform mat4 p3d_ModelViewMatrix;
-uniform sampler2D albedo_tex;
-uniform sampler2D normal_tex;
 uniform sampler2D depth_tex;
+uniform sampler2D normal_tex;
+uniform sampler2D albedo_tex;
+uniform sampler2D lit_tex;
+uniform mat4 trans_apiclip_of_camera_to_apiview_of_camera;
+uniform vec3 light_color;
+uniform vec3 direction;
 
-uniform vec4 light;
-uniform vec4 light_pos;
-uniform vec2 win_size;
-
-in vec3 N;
-in vec3 V;
-//in vec4 shadow_uv;
+in vec2 uv;
+in vec4 light_direction;
 
 // For each component of v, returns -1 if the component is < 0, else 1
 vec2 sign_not_zero(vec2 v)
@@ -43,43 +38,40 @@ vec3 unpack_normal_octahedron(vec2 packed_nrm)
     return normalize(v);
     }
 
+vec3 getPosition(vec2 uv)
+    {
+    float depth=texture(depth_tex,uv).r * 2.0 - 1.0;
+    vec4 view_pos = trans_apiclip_of_camera_to_apiview_of_camera * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
+    view_pos.xyz /= view_pos.w;
+    return view_pos.xyz;
+    }
+
+
 void main()
     {
-    vec3 color=vec3(0.0, 0.0, 0.0);
-
-    vec2 uv=gl_FragCoord.xy/win_size;
-
+    vec4 pre_light_tex=texture(lit_tex, uv);
     vec4 color_tex=texture(albedo_tex, uv);
     vec3 albedo=color_tex.rgb;
     vec4 normal_glow_gloss=texture(normal_tex,uv);
     vec3 normal=unpack_normal_octahedron(normal_glow_gloss.xy);
     float gloss=normal_glow_gloss.a;
     float glow=normal_glow_gloss.b;
-    float depth=texture(depth_tex,uv).r * 2.0 - 1.0;
 
-    vec4 light_view_pos=p3d_ViewMatrix*vec4(light_pos.xyz, 1.0);
-    //vec4 light_view_pos=shadowcaster.position;
+    vec3 view_pos =getPosition(uv);
 
-    vec4 view_pos = p3d_ProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
-    view_pos.xyz /= view_pos.w;
+    vec3 color=vec3(0.0, 0.0, 0.0);
 
-
-    vec3 light_color=light.rgb;
-    float light_radius=light.w;
-    //diffuse
-    vec3 light_vec = normalize(light_view_pos.xyz-view_pos.xyz);
-    float attenuation=1.0-(pow(distance(view_pos.xyz, light_view_pos.xyz), 2.0)/light_radius);
-    //attenuation*=pow(dot(normalize(N),normalize(V)), 2.0);
-    //attenuation=clamp(attenuation, 0.0, 1.0);
-    color+=light_color*max(dot(normal.xyz,light_vec), 0.0)*attenuation;
+    vec3 light_vec = normalize(light_direction.xyz);
+    color+=light_color*max(dot(normal.xyz,light_vec), 0.0);
     //spec
     vec3 view_vec = normalize(-view_pos.xyz);
     vec3 reflect_vec=normalize(reflect(light_vec,normal.xyz));
-    float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*attenuation*gloss;
+    float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
+    spec*=dot(light_color, vec3(1.0, 1.0, 1.0));
+    vec4 final=pre_light_tex+vec4((color*albedo)+light_color*spec, spec+gloss);
 
-    vec4 final=vec4((color*albedo)+light_color*spec, spec+gloss);
-
-    //final.rgb+=albedo*glow;
+    final.rgb+=albedo*glow;
 
     gl_FragData[0]=final;
     }
+
