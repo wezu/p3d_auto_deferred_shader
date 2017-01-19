@@ -10,7 +10,6 @@ uniform sampler2D depth_tex;
 
 uniform vec4 light;
 uniform vec4 light_pos;
-uniform vec2 win_size;
 
 in vec3 N;
 in vec3 V;
@@ -46,7 +45,7 @@ vec3 unpack_normal_octahedron(vec2 packed_nrm)
 void main()
     {
     vec3 color=vec3(0.0, 0.0, 0.0);
-
+    vec2 win_size=textureSize(depth_tex, 0).xy;
     vec2 uv=gl_FragCoord.xy/win_size;
 
     vec4 color_tex=texture(albedo_tex, uv);

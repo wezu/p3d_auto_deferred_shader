@@ -1,15 +1,19 @@
 import sys
 if sys.version_info >= (3, 0):
     import builtins
+    basestring = str
 else:
     import __builtin__ as builtins
 import math
-
+from collections  import defaultdict
 from panda3d.core import *
-from direct.filter.FilterManager import *
+from direct.showbase.DirectObject import DirectObject
 
-class DeferredRenderer():
+class DeferredRenderer(DirectObject):
     def __init__(self, scene_mask=1, light_mask=2):
+
+        self.f='shaders/{}_f.glsl'
+        self.v='shaders/{}_v.glsl'
 
         builtins.loader=WrappedLoader(builtins.loader)
         loader.texture_shader_inputs=[{'input_name':'tex_diffuse',
@@ -21,8 +25,6 @@ class DeferredRenderer():
                                     {'input_name':'tex_shga',#Shine Height Alpha Glow
                                     'stage_modes':(TextureStage.M_selector,),#something different
                                     'default_texture':loader.loadTexture('data/def_shga.png')}]
-
-        #Wrapper(builtins.loader)
 
         self.modelbuffer = self.makeFBO("model buffer", 1)
         self.lightbuffer = self.makeFBO("light buffer", 0)
@@ -133,91 +135,101 @@ class DeferredRenderer():
         self.plain_root.hide(BitMask32(self.lightMask))
         self.plain_root.hide(BitMask32(self.modelMask))
 
-        # Cause the final results to be rendered into the main window on a
-        # card.
-        self.final_card = self.lightbuffer.getTextureCard()
-        #self.final_card.setTexture(self.lit_tex)
-
         #post process
-        self.quad_stage0, self.tex_stage0 = self.makeFilterStage(4, size=1.0)
-        self.quad_stage0.setShader(Shader.load(Shader.SLGLSL, 'shaders/ao_v.glsl', 'shaders/ao_f.glsl'))
-        self.quad_stage0.setShaderInput("depth_tex", self.depth)
-        self.quad_stage0.setShaderInput("normal_tex", self.normal)
-        self.quad_stage0.setShaderInput("random_tex", loader.loadTexture('data/random.png'))
-        self.quad_stage0.setShaderInput("random_size", 64.0)
-        self.quad_stage0.setShaderInput("sample_rad", 0.4)
-        self.quad_stage0.setShaderInput("intensity", 10.0)
-        self.quad_stage0.setShaderInput("scale", 0.9)
-        self.quad_stage0.setShaderInput("bias", 0.4)
-        self.quad_stage0.setShaderInput("fade_distance", 80.0)
-        self.quad_stage0.setShaderInput('win_size', Vec2(base.win.getXSize()*1.0, base.win.getYSize()*1.0))
-        self.quad_stage0.setShaderInput('camera', base.cam)
+        self.filter_buff={}
+        self.filter_quad={}
+        self.filter_tex={}
+        self.common_inputs={'render':render,
+                            'camera': base.cam,
+                            'depth_tex': self.depth,
+                            'normal_tex': self.normal,
+                            'albedo_tex': self.albedo,
+                            'lit_tex': self.lit_tex,
+                            'forward_tex':self.plain_tex}
 
-        self.quad_stage1, self.tex_stage1 = self.makeFilterStage(5, size=1.0)
-        self.quad_stage1.setShader(Shader.load(Shader.SLGLSL, 'shaders/dir_light_v.glsl', 'shaders/dir_light_f.glsl'))
-        self.quad_stage1.setShaderInput("depth_tex", self.depth)
-        self.quad_stage1.setShaderInput("normal_tex", self.normal)
-        self.quad_stage1.setShaderInput("albedo_tex", self.albedo)
-        self.quad_stage1.setShaderInput("lit_tex", self.lit_tex)
-        self.quad_stage1.setShaderInput('camera', base.cam)
-        self.quad_stage1.setShaderInput('light_color', Vec3(0,0,0))
-        self.quad_stage1.setShaderInput('direction', Vec3(0,0,0))
+        self.filter_stages=[{'shader_name':'ao',
+                             'inputs':{'random_tex':'data/random.png',
+                                       'random_size':64.0,
+                                        'sample_rad': 0.4,
+                                        'intensity': 10.0,
+                                        'scale': 0.9,
+                                        'bias': 0.4,
+                                        'fade_distance': 80.0}},
+                            {'name':'final_light','shader_name':'dir_light',
+                            'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
+                            {'shader_name':'fog',
+                            'inputs':{'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
+                                      'fog_config': Vec4(1.0, 100.0, 2.0, 1.0), #start, stop, power, mix
+                                      'dof_near': 0.5,
+                                      'dof_far': 60.0}},
+                            {'shader_name':'ssr','inputs':{}},
+                            {'shader_name':'bloom',
+                            'size_factor':0.5,
+                            'inputs':{'glow_power': 5.0}},
+                            {'name':'bloom_blur', 'shader_name':'blur',
+                             'inputs':{'blur':3.0}},
+                            {'name':'compose','shader_name':'mix',
+                            'inputs':{'lut_tex':'data/lut_v1.png',
+                                      'noise_tex':'data/noise.png'}},
+                            {'name':'pre_aa','shader_name':'dof',
+                             'inputs':{'blur':6.0}},
+                            {'shader_name':'fxaa',
+                            'inputs':{ 'FXAA_SPAN_MAX' : 2.0,
+                                       'FXAA_REDUCE_MUL': float(1.0/16.0),
+                                       'FXAA_SUBPIX_SHIFT': float(1.0/8.0)}}
+                            ]
 
-        self.quad_stage2, self.tex_stage2 = self.makeFilterStage(sort=8, clear_color=(0.0, 0.0, 1.0, 0.0))
-        self.quad_stage2.setShader(Shader.load(Shader.SLGLSL, 'shaders/fog_v.glsl', 'shaders/fog_f.glsl'))
-        self.quad_stage2.setShaderInput("lit_tex", self.tex_stage1)
-        self.quad_stage2.setShaderInput("depth_tex", self.depth)
-        self.quad_stage2.setShaderInput("fog_color", Vec4(0.1, 0.1, 0.1, 0.0))
-        self.quad_stage2.setShaderInput("fog_config", Vec4(1.0, 100.0, 2.0, 1.0)) #start, stop, power, mix
-        self.quad_stage2.setShaderInput("dof_near", 0.7)
-        self.quad_stage2.setShaderInput("dof_far", 60.0)
-        self.quad_stage2.setShaderInput('camera', base.cam)
+        for stage in self.filter_stages[:-1]:
+            self.addFilter(**stage)
+        for name, tex in self.filter_tex.items():
+            self.common_inputs[name]=tex
+        for name, value in self.common_inputs.items():
+            for filter_name, quad in self.filter_quad.items():
+                quad.setShaderInput(name, value)
 
-        self.quad_stage3, self.tex_stage3 = self.makeFilterStage(6, size=0.5)
-        self.quad_stage3.setShader(Shader.load(Shader.SLGLSL, 'shaders/ssr_v.glsl', 'shaders/ssr_f.glsl'))
-        self.quad_stage3.setShaderInput("color_tex", self.tex_stage1)
-        self.quad_stage3.setShaderInput("normal_tex", self.normal)
-        self.quad_stage3.setShaderInput("depth_tex", self.depth)
-        self.quad_stage3.setShaderInput('win_size', Vec2(base.win.getXSize()*0.5, base.win.getYSize()*0.5))
-        self.quad_stage3.setShaderInput('camera', base.cam)
+        #stick the last stage quad to render2d
+        #this is a bit ugly...
+        if 'name' in self.filter_stages[-1]:
+            last_stage=self.filter_stages[-1]['name']
+        else:
+            last_stage=self.filter_stages[-1]['shader_name']
+        self.filter_quad[last_stage]=self.lightbuffer.getTextureCard()
+        shader_name=self.filter_stages[-1]['shader_name']
+        inputs=self.filter_stages[-1]['inputs']
+        self.filter_quad[last_stage].setShader(Shader.load(Shader.SLGLSL, self.v.format(shader_name), self.f.format(shader_name)))
+        for name, value in inputs.items():
+            if isinstance(value, basestring):
+                value=loader.loadTexture(value)
+            self.filter_quad[last_stage].setShaderInput(str(name), value)
+        for name, value in self.common_inputs.items():
+            self.filter_quad[last_stage].setShaderInput(name, value)
 
-        self.quad_stage4, self.tex_stage4 = self.makeFilterStage(7, size=0.5)
-        self.quad_stage4.setShader(Shader.load(Shader.SLGLSL, 'shaders/bloom_v.glsl', 'shaders/bloom_f.glsl'))
-        self.quad_stage4.setShaderInput("color_tex", self.tex_stage1)
-        self.quad_stage4.setShaderInput("normal_tex", self.normal)
-        self.quad_stage4.setShaderInput("glow_power", 5.0)
-
-        self.quad_stage5, self.tex_stage5 = self.makeFilterStage(8, size=0.5)
-        self.quad_stage5.setShader(Shader.load(Shader.SLGLSL, 'shaders/blur_v.glsl', 'shaders/blur_f.glsl'))
-        self.quad_stage5.setShaderInput("input_map", self.tex_stage4)
-        self.quad_stage5.setShaderInput("blur", 3.0)
-
-        self.quad_stage6, self.tex_stage6 = self.makeFilterStage(9)
-        self.quad_stage6.setShader(Shader.load(Shader.SLGLSL, 'shaders/mix_v.glsl', 'shaders/mix_f.glsl'))
-        self.quad_stage6.setShaderInput("ssr_tex", self.tex_stage3)
-        self.quad_stage6.setShaderInput("ao_tex", self.tex_stage0)
-        self.quad_stage6.setShaderInput("lit_tex", self.tex_stage2)
-        self.quad_stage6.setShaderInput("bloom_tex", self.tex_stage5)
-        self.quad_stage6.setShaderInput("lut_tex", loader.loadTexture('data/lut_v1.png'))
-        self.quad_stage6.setShaderInput("noise_tex", loader.loadTexture('data/noise.png'))
-        self.quad_stage6.setShaderInput("forward_tex", self.plain_tex)
-        self.quad_stage6.setShaderInput('win_size', Vec2(base.win.getXSize()*1.0, base.win.getYSize()*1.0))
-
-        self.quad_stage7, self.tex_stage7 = self.makeFilterStage(8)
-        self.quad_stage7.setShader(Shader.load(Shader.SLGLSL, 'shaders/dof_v.glsl', 'shaders/dof_f.glsl'))
-        self.quad_stage7.setShaderInput("input_map", self.tex_stage6)
-        self.quad_stage7.setShaderInput("blur", 8.0)
-
-
-        self.final_card.reparentTo(render2d)
-        self.final_card.setShader(Shader.load(Shader.SLGLSL, 'shaders/fxaa_v.glsl', 'shaders/fxaa_f.glsl'))
-        self.final_card.setShaderInput('tex0', self.tex_stage7)
-        self.final_card.setShaderInput('win_size', Vec2(base.win.getXSize(), base.win.getYSize()))
-        self.final_card.setShaderInput('FXAA_SPAN_MAX' , float(2.0))
-        self.final_card.setShaderInput('FXAA_REDUCE_MUL', float(1.0/16.0))
-        self.final_card.setShaderInput('FXAA_SUBPIX_SHIFT', float(1.0/8.0))
+        self.filter_quad[last_stage].reparentTo(render2d)
 
         taskMgr.add(self.update, 'update_tsk')
+
+    def addFilter(self, shader_name, inputs, name=None, size_factor=1.0, clear_color=None):
+        if name is None:
+            name=shader_name
+        index=len(self.filter_buff)
+        quad, tex, buff=self.makeFilterStage(sort=index, size=size_factor, clear_color=clear_color)
+        self.filter_buff[name]=buff
+        self.filter_quad[name]=quad
+        self.filter_tex[name]=tex
+
+        quad.setShader(Shader.load(Shader.SLGLSL, self.v.format(shader_name), self.f.format(shader_name)))
+        #common inputs
+        quad.setShaderInput('render', render)
+        quad.setShaderInput('camera', base.cam)
+        quad.setShaderInput('depth_tex', self.depth)
+        quad.setShaderInput('normal_tex', self.normal)
+        quad.setShaderInput("albedo_tex", self.albedo)
+        quad.setShaderInput("lit_tex", self.lit_tex)
+        for name, value in inputs.items():
+            if isinstance(value, basestring):
+                value=loader.loadTexture(value)
+            quad.setShaderInput(str(name), value)
+
 
     def makeFilterStage(self, sort=0, size=1.0, clear_color=None):
         #make a root for the buffer
@@ -246,7 +258,7 @@ class DeferredRenderer():
         quad=root.attachNewNode(cm.generate())
         quad.lookAt(0, 0, -1)
         quad.setLightOff()
-        return quad, tex
+        return quad, tex, buff
 
     def makeForwardStage(self):
         root=NodePath("forwardRoot")
@@ -268,8 +280,8 @@ class DeferredRenderer():
         return root, tex, cam
 
     def setDirectionalLight(self, color, direction):
-        self.quad_stage1.setShaderInput('light_color', color)
-        self.quad_stage1.setShaderInput('direction', direction)
+        self.filter_quad['final_light'].setShaderInput('light_color', color)
+        self.filter_quad['final_light'].setShaderInput('direction', direction)
 
     def addConeLight(self, color, pos=(0,0,0), hpr=(0,0,0), radius=1.0, fov=45.0, model_size_margin=1.0):
         if fov >179.0:
@@ -503,8 +515,16 @@ class WrappedLoader(object):
                     readMipmaps = False, okMissing = False,
                     minfilter = None, magfilter = None,
                     anisotropicDegree = None, loaderOptions = None,
-                    multiview = None):
-        return self.original_loader.loadTexture(texturePath, alphaPath, readMipmaps, okMissing, minfilter, magfilter, anisotropicDegree, loaderOptions, multiview)
+                    multiview = None, sRgb=False):
+        tex=self.original_loader.loadTexture(texturePath, alphaPath, readMipmaps, okMissing, minfilter, magfilter, anisotropicDegree, loaderOptions, multiview)
+        if sRgb:
+            tex_format=tex.getFormat()
+            if tex_format==Texture.F_rgb:
+                tex_format=Texture.F_srgb
+            elif tex_format==Texture.F_rgba:
+                tex_format=Texture.F_srgb_alpha
+            tex.setFormat(tex_format)
+        return tex
 
     def load3DTexture(self, texturePattern, readMipmaps = False, okMissing = False,
                       minfilter = None, magfilter = None, anisotropicDegree = None,

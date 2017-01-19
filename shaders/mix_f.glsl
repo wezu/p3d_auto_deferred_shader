@@ -3,14 +3,13 @@
 in vec2 uv;
 
 uniform sampler2D lut_tex;
-uniform sampler2D lit_tex;
-uniform sampler2D ao_tex;
-uniform sampler2D ssr_tex;
+uniform sampler2D fog;
+uniform sampler2D ao;
+uniform sampler2D ssr;
 uniform sampler2D forward_tex;
-uniform sampler2D bloom_tex;
-uniform sampler2D blur_tex;
+uniform sampler2D bloom_blur;
 uniform sampler2D noise_tex;
-uniform vec2 win_size;
+//uniform vec2 win_size;
 
 vec3 applyColorLUT(sampler2D lut, vec3 color)
     {
@@ -29,21 +28,21 @@ vec3 applyColorLUT(sampler2D lut, vec3 color)
 
 void main()
     {
-    vec4 color=texture(lit_tex,uv);
+    vec4 color=texture(fog,uv);
     vec4 color_forward=texture(forward_tex,uv);
-    float ao=texture(ao_tex,uv).r;
-    vec4 ssr=texture(ssr_tex,uv);
-    vec4 bloom=texture(bloom_tex,uv);
-    vec4 blur=texture(blur_tex,uv);
+    float ao_tex=texture(ao,uv).r;
+    vec4 ssr_tex=texture(ssr,uv);
+    vec4 bloom=texture(bloom_blur,uv);
+    vec2 win_size=textureSize(fog, 0).xy;
     vec4 noise=texture(noise_tex,win_size*uv/64.0);
 
     vec3 final_color=mix(color.rgb,color_forward.rgb, color_forward.a);
 
-    final_color+=ssr.rgb*color.a;
+    final_color+=ssr_tex.rgb*color.a;
 
     final_color+=bloom.rgb;
 
-    final_color.rgb*=ao;
+    final_color.rgb*=ao_tex;
 
     final_color.rgb=applyColorLUT(lut_tex, final_color.rgb);
 

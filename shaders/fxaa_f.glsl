@@ -2,9 +2,9 @@
 #version 140
 //#extension GL_EXT_gpu_shader4 : enable
 
-uniform sampler2D tex0; // 0
+uniform sampler2D pre_aa; // 0
 uniform float vx_offset;
-uniform vec2 win_size;
+//uniform vec2 win_size;
 uniform float FXAA_SPAN_MAX = 8.0;
 uniform float FXAA_REDUCE_MUL = 1.0/8.0;
 //uniform float FXAA_SUBPIX_SHIFT = 1.0/4.0;
@@ -67,6 +67,7 @@ vec3 FxaaPixelShader(
 vec4 PostFX(sampler2D tex, vec2 uv)
 {
   vec4 c = vec4(0.0);
+  vec2 win_size=textureSize(pre_aa, 0).xy;
   vec2 rcpFrame = vec2(1.0/win_size.x, 1.0/win_size.y);
   c.rgb = FxaaPixelShader(posPos, tex, rcpFrame);
   //c.rgb = 1.0 - texture2D(tex, posPos.xy).rgb;
@@ -77,6 +78,6 @@ vec4 PostFX(sampler2D tex, vec2 uv)
 void main()
 {
   //vec2 uv = gl_TexCoord[0].st;
-  gl_FragColor = PostFX(tex0, posPos.xy);
-  //gl_FragColor =texture(tex0,posPos.xy);
+  gl_FragColor = PostFX(pre_aa, posPos.xy);
+  //gl_FragColor =vec4(1.0, 0.0, 0.0, 0.5);
 }

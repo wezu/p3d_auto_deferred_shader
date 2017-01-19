@@ -6,6 +6,7 @@ loadPrcFileData('','framebuffer-srgb true')
 loadPrcFileData('','textures-power-2 None')
 loadPrcFileData("", "sync-video 0")
 loadPrcFileData("", "show-frame-rate-meter  1")
+loadPrcFileData("", "texture-anisotropic-degree 2")
 loadPrcFileData("", "win-size 1024 768")
 from direct.showbase import ShowBase
 from direct.showbase.DirectObject import DirectObject
@@ -52,6 +53,10 @@ class Demo(DirectObject):
         self.renderer.setDirectionalLight(Vec3(0.4, 0.4, 0.4), Vec3(-0.5, 0.5, 1.0))
         #self.renderer.addConeLight(color=(0.8, 0.8, 0.8), pos=(0,-4,1), hpr=(0,-60,0), radius=15.0, fov=60.0)
         #self.renderer.addLight(color=(0.3,0.3,0.5), pos=(2,3,2), radius=12.0)
+        self.accept('space', self.do_debug)
+
+    def do_debug(self):
+        print self.renderer.filter_buff['pre_aa'].getFbSize()
 
 d=Demo()
 base.run()

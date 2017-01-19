@@ -15,7 +15,7 @@ in vec2 uv;
 
 uniform sampler2D normal_tex;
 uniform sampler2D depth_tex;
-uniform sampler2D color_tex;
+uniform sampler2D final_light;
 uniform mat4 trans_apiclip_of_camera_to_apiview_of_camera;
 uniform mat4 trans_apiview_of_camera_to_apiclip_of_camera;
 
@@ -117,7 +117,7 @@ void main()
     float co=abs(dot(-V, N));
     vec4 final=raytrace(P.xyz, P.xyz + R,
                        trans_apiview_of_camera_to_apiclip_of_camera,
-                       color_tex, depth_tex);
+                       final_light, depth_tex);
 
     gl_FragData[0] =final*co;
     //gl_FragData[0] =vec4(co,co,co, 1.0);

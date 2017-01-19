@@ -2,7 +2,7 @@
 #version 140
 uniform mat4 trans_apiclip_of_camera_to_apiview_of_camera;
 uniform sampler2D depth_tex;
-uniform sampler2D lit_tex;
+uniform sampler2D final_light;
 uniform vec4 fog_color;
 uniform vec4 fog_config;
 uniform float dof_near;
@@ -14,7 +14,7 @@ const float PI = 3.14159265358;
 
 void main()
     {
-    vec4 color=texture(lit_tex,uv);
+    vec4 color=texture(final_light,uv);
     float depth=texture(depth_tex,uv).r * 2.0 - 1.0;
     vec4 view_pos = trans_apiclip_of_camera_to_apiview_of_camera * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
     view_pos.xyz /= view_pos.w;

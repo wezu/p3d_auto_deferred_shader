@@ -10,7 +10,7 @@ uniform float intensity;
 uniform float scale;
 uniform float bias;
 uniform float fade_distance;
-uniform vec2 win_size;
+
 in vec2 uv;
 
 // For each component of v, returns -1 if the component is < 0, else 1
@@ -67,6 +67,7 @@ void main()
         return;
         }
     vec3 n =unpack_normal_octahedron(texture(normal_tex,uv).xy);
+    vec2 win_size=textureSize(normal_tex, 0).xy;
     vec2 rand = normalize(texture(random_tex, win_size * uv / random_size).xy * 2.0 - 1.0);
     float rad = sample_rad/p.z;
 

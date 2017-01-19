@@ -18,7 +18,7 @@ uniform mat4 trans_render_to_shadowcaster;
 
 uniform vec4 light;
 uniform vec4 light_pos;
-uniform vec2 win_size;
+//uniform vec2 win_size;
 
 uniform float near;
 uniform float bias;
@@ -57,7 +57,7 @@ vec3 unpack_normal_octahedron(vec2 packed_nrm)
 void main()
     {
     vec3 color=vec3(0.0, 0.0, 0.0);
-
+    vec2 win_size=textureSize(depth_tex, 0).xy;
     vec2 uv=gl_FragCoord.xy/win_size;
 
     vec4 color_tex=texture(albedo_tex, uv);

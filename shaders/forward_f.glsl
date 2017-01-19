@@ -4,10 +4,10 @@ in vec2 UV;
 in vec3 N;
 uniform sampler2D p3d_Texture0; //rgba color texture
 uniform sampler2D depth_tex;
-uniform vec2 win_size;
 
 void main()
     {
+    vec2 win_size=textureSize(depth_tex, 0).xy;
     vec4 color_map=texture(p3d_Texture0, UV);
     vec2 screen_uv=gl_FragCoord.xy/win_size;
     float depth=texture(depth_tex, screen_uv).r;
