@@ -15,6 +15,8 @@ class DeferredRenderer(DirectObject):
         self.f='shaders/{}_f.glsl'
         self.v='shaders/{}_v.glsl'
 
+        self.last_window_size=(base.win.getXSize(), base.win.getYSize())
+
         builtins.loader=WrappedLoader(builtins.loader)
         loader.texture_shader_inputs=[{'input_name':'tex_diffuse',
                                     'stage_modes':(TextureStage.M_modulate, TextureStage.M_modulate_glow,  TextureStage.M_modulate_gloss),
@@ -128,7 +130,7 @@ class DeferredRenderer(DirectObject):
         self.geometry_root.hide(BitMask32(self.lightMask))
         #self.geometry_root.hide(BitMask32(self.plainMask))
 
-        self.plain_root, self.plain_tex, self.plain_cam=self.makeForwardStage()
+        self.plain_root, self.plain_tex, self.plain_cam, self.plain_buff=self.makeForwardStage()
         self.plain_root.setShader((Shader.load(Shader.SLGLSL, 'shaders/forward_v.glsl', 'shaders/forward_f.glsl')))
         self.plain_root.setShaderInput("depth_tex", self.depth)
         self.plain_root.setShaderInput('win_size', Vec2(base.win.getXSize(), base.win.getYSize()))
@@ -167,7 +169,8 @@ class DeferredRenderer(DirectObject):
                             'size_factor':0.5,
                             'inputs':{'glow_power': 5.0}},
                             {'name':'bloom_blur', 'shader_name':'blur',
-                             'inputs':{'blur':3.0}},
+                             'inputs':{'blur':3.0},
+                             'size_factor':0.5},
                             {'name':'compose','shader_name':'mix',
                             'inputs':{'lut_tex':'data/lut_v1.png',
                                       'noise_tex':'data/noise.png'}},
@@ -203,10 +206,24 @@ class DeferredRenderer(DirectObject):
             self.filter_quad[last_stage].setShaderInput(str(name), value)
         for name, value in self.common_inputs.items():
             self.filter_quad[last_stage].setShaderInput(name, value)
-
         self.filter_quad[last_stage].reparentTo(render2d)
 
+        self.accept("window-event", self.on_window_event)
         taskMgr.add(self.update, 'update_tsk')
+
+    def on_window_event(self, window):
+        if window is not None:
+            window_size=(base.win.getXSize(), base.win.getYSize())
+            if self.last_window_size != window_size:
+                self.modelbuffer.setSize(window_size[0],window_size[1])
+                self.lightbuffer.setSize(window_size[0],window_size[1])
+                self.plain_buff.setSize(window_size[0],window_size[1])
+                for buff in self.filter_buff.values():
+                    old_size=buff.getFbSize()
+                    x_factor=float(old_size[0])/float(self.last_window_size[0])
+                    y_factor=float(old_size[1])/float(self.last_window_size[1])
+                    buff.setSize(int(window_size[0]*x_factor),int(window_size[1]*y_factor))
+                self.last_window_size=window_size
 
     def addFilter(self, shader_name, inputs, name=None, size_factor=1.0, clear_color=None):
         if name is None:
@@ -239,9 +256,21 @@ class DeferredRenderer(DirectObject):
         tex.setWrapV(Texture.WM_clamp)
         buff_size_x=int(base.win.getXSize()*size)
         buff_size_y=int(base.win.getYSize()*size)
-        buff=base.win.makeTextureBuffer("buff", buff_size_x, buff_size_y, tex)
+        #buff=base.win.makeTextureBuffer("buff", buff_size_x, buff_size_y, tex)
+        winprops = WindowProperties()
+        winprops.setSize(buff_size_x, buff_size_y)
+        props = FrameBufferProperties()
+        props.setRgbColor(True)
+        props.setRgbaBits(8, 8, 8, 8)
+        props.setDepthBits(0)
+        buff= base.graphicsEngine.makeOutput(
+            base.pipe, 'filter_stage', sort,
+            props, winprops,
+            GraphicsPipe.BF_resizeable,
+            base.win.getGsg(), base.win)
+        buff.addRenderTexture(tex = tex, mode = GraphicsOutput.RTMBindOrCopy, bitplane  = GraphicsOutput.RTPColor)
         #buff.setSort(sort)
-        buff.setSort(0)
+        #buff.setSort(0)
         if clear_color:
             buff.setClearColor(clear_color)
             buff.setClearActive(GraphicsOutput.RTPColor, True)
@@ -277,7 +306,7 @@ class DeferredRenderer(DirectObject):
         mask=BitMask32.bit(self.modelMask)
         mask.setBit(self.lightMask)
         cam.node().setCameraMask(mask)
-        return root, tex, cam
+        return root, tex, cam, buff
 
     def setDirectionalLight(self, color, direction):
         self.filter_quad['final_light'].setShaderInput('light_color', color)

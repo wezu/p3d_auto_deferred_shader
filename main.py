@@ -56,7 +56,8 @@ class Demo(DirectObject):
         self.accept('space', self.do_debug)
 
     def do_debug(self):
-        print self.renderer.filter_buff['pre_aa'].getFbSize()
+        for name, buff in self.renderer.filter_buff.items():
+            print name, buff.getFbSize()
 
 d=Demo()
 base.run()
