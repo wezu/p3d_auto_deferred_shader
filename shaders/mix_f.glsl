@@ -30,23 +30,32 @@ void main()
     {
     vec4 color=texture(fog,uv);
     vec4 color_forward=texture(forward_tex,uv);
-    float ao_tex=texture(ao,uv).r;
-    vec4 ssr_tex=texture(ssr,uv);
-    vec4 bloom=texture(bloom_blur,uv);
     vec2 win_size=textureSize(fog, 0).xy;
-    vec4 noise=texture(noise_tex,win_size*uv/64.0);
-
     vec3 final_color=mix(color.rgb,color_forward.rgb, color_forward.a);
 
+    #ifndef DISABLE_SSR
+    vec4 ssr_tex=texture(ssr,uv);
     final_color+=ssr_tex.rgb*color.a;
+    #endif
 
+    #ifndef DISABLE_BLOOM
+    vec4 bloom=texture(bloom_blur,uv);
     final_color+=bloom.rgb;
+    #endif
 
+    #ifndef DISABLE_AO
+    float ao_tex=texture(ao,uv).r;
     final_color.rgb*=ao_tex;
+    #endif
 
+    #ifndef DISABLE_LUT
     final_color.rgb=applyColorLUT(lut_tex, final_color.rgb);
+    #endif
 
+    #ifndef DISABLE_DITHERING
+    vec4 noise=texture(noise_tex,win_size*uv/64.0);
     final_color+= ((noise.r + noise.g)-0.5)/255.0;
+    #endif
 
     gl_FragData[0]=vec4(final_color.rgb, color.a);
     //gl_FragData[0]=vec4(ao, ao, ao, 1.0);

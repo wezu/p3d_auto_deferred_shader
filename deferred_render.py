@@ -10,13 +10,15 @@ from panda3d.core import *
 from direct.showbase.DirectObject import DirectObject
 
 class DeferredRenderer(DirectObject):
-    def __init__(self, scene_mask=1, light_mask=2):
+    def __init__(self, preset='medium', filter_setup=None, shading_setup=None, scene_mask=1, light_mask=2):
 
+        #template to load the shaders by name, without the directory and extension
         self.f='shaders/{}_f.glsl'
         self.v='shaders/{}_v.glsl'
-
+        #last known window size, needed to test on window events if the window size changed
         self.last_window_size=(base.win.getXSize(), base.win.getYSize())
 
+        #install a wrapped version of the loader in the builtins
         builtins.loader=WrappedLoader(builtins.loader)
         loader.texture_shader_inputs=[{'input_name':'tex_diffuse',
                                     'stage_modes':(TextureStage.M_modulate, TextureStage.M_modulate_glow,  TextureStage.M_modulate_gloss),
@@ -28,6 +30,203 @@ class DeferredRenderer(DirectObject):
                                     'stage_modes':(TextureStage.M_selector,),#something different
                                     'default_texture':loader.loadTexture('data/def_shga.png')}]
 
+        self.shading_preset={'full':{},
+                            'medium':{'DISABLE_POM':1},
+                            'minimal':{'DISABLE_POM':1, 'DISABLE_SHADOWS':1}
+                           }
+        #set up the deferred rendering buffers
+        if shading_setup:
+            self.shading_setup=shading_setup
+        else:
+            self.shading_setup=self.shading_preset[preset]
+
+        self.setupGbuffer(self.shading_setup)
+
+        self.preset={'full':[{'shader_name':'ao',
+                             'inputs':{'random_tex':'data/random.png',
+                                       'random_size':64.0,
+                                        'sample_rad': 0.4,
+                                        'intensity': 10.0,
+                                        'scale': 0.9,
+                                        'bias': 0.4,
+                                        'fade_distance': 80.0}},
+                            {'name':'final_light','shader_name':'dir_light',
+                            'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
+                            {'shader_name':'fog',
+                            'inputs':{'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
+                                      'fog_config': Vec4(1.0, 100.0, 2.0, 1.0), #start, stop, power, mix
+                                      'dof_near': 0.5, #0.0..1.0 not distance!
+                                      'dof_far': 60.0}}, #distance in units to full blur
+                            {'shader_name':'ssr','inputs':{}},
+                            {'shader_name':'bloom',
+                            'size_factor':0.5,
+                            'inputs':{'glow_power': 5.0}},
+                            {'name':'bloom_blur', 'shader_name':'blur',
+                             'inputs':{'blur':3.0},
+                             'size_factor':0.5},
+                            {'name':'compose','shader_name':'mix',
+                            'inputs':{'lut_tex':'data/lut_v1.png',
+                                      'noise_tex':'data/noise.png'}},
+                            {'name':'pre_aa','shader_name':'dof',
+                             'inputs':{'blur':6.0}},
+                            {'shader_name':'fxaa',
+                            'inputs':{ 'FXAA_SPAN_MAX' : 2.0,
+                                       'FXAA_REDUCE_MUL': float(1.0/16.0),
+                                       'FXAA_SUBPIX_SHIFT': float(1.0/8.0)}}
+                            ],
+                    'minimal':[{'name':'final_light','shader_name':'dir_light',
+                                'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
+                               {'name':'compose','shader_name':'mix',
+                               'translate_tex_name':{'final_light':'fog'},
+                                'define':{'DISABLE_SSR':1,
+                                          'DISABLE_AO':1,
+                                          'DISABLE_BLOOM':1,
+                                          'DISABLE_LUT':1,
+                                          'DISABLE_DITHERING':1},
+                                'inputs':{'lut_tex':'data/lut_v1.png',
+                                      'noise_tex':'data/noise.png'}},
+                               {'shader_name':'fxaa',
+                               'translate_tex_name':{'compose':'pre_aa'},
+                                'inputs':{'FXAA_SPAN_MAX' : 2.0,
+                                          'FXAA_REDUCE_MUL': float(1.0/16.0),
+                                          'FXAA_SUBPIX_SHIFT': float(1.0/8.0)}}
+                             ],
+                    'medium':[{'shader_name':'ao', 'size_factor':0.5,
+                             'inputs':{'random_tex':'data/random.png',
+                                       'random_size':64.0,
+                                        'sample_rad': 0.4,
+                                        'intensity': 10.0,
+                                        'scale': 0.9,
+                                        'bias': 0.4,
+                                        'fade_distance': 80.0}},
+                            {'name':'final_light','shader_name':'dir_light',
+                            'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
+                            {'shader_name':'fog',
+                            'inputs':{'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
+                                      'fog_config': Vec4(1.0, 100.0, 2.0, 1.0), #start, stop, power, mix
+                                      'dof_near': 0.5, #0.0..1.0 not distance!
+                                      'dof_far': 60.0}}, #distance in units to full blur
+                            {'shader_name':'bloom',
+                            'size_factor':0.5,
+                            'inputs':{'glow_power': 5.0}},
+                            {'name':'bloom_blur', 'shader_name':'blur',
+                             'inputs':{'blur':3.0},
+                             'size_factor':0.5},
+                             {'name':'compose','shader_name':'mix',
+                             'define':{'DISABLE_SSR':1},
+                             'inputs':{'lut_tex':'data/lut_v1.png',
+                                      'noise_tex':'data/noise.png'}},
+                            {'shader_name':'fxaa',
+                            'translate_tex_name':{'compose':'pre_aa'},
+                            'inputs':{ 'FXAA_SPAN_MAX' : 2.0,
+                                       'FXAA_REDUCE_MUL': float(1.0/16.0),
+                                       'FXAA_SUBPIX_SHIFT': float(1.0/8.0)}}
+                            ]
+                    }
+
+
+        #post process
+        self.filter_buff={}
+        self.filter_quad={}
+        self.filter_tex={}
+        self.common_inputs={'render':render,
+                            'camera': base.cam,
+                            'depth_tex': self.depth,
+                            'normal_tex': self.normal,
+                            'albedo_tex': self.albedo,
+                            'lit_tex': self.lit_tex,
+                            'forward_tex':self.plain_tex}
+        if filter_setup:
+            self.filter_stages=filter_setup
+        else:
+            self.filter_stages=self.preset[preset]
+
+        for stage in self.filter_stages[:-1]:
+            self.addFilter(**stage)
+        for name, tex in self.filter_tex.items():
+            self.common_inputs[name]=tex
+        for name, value in self.common_inputs.items():
+            for filter_name, quad in self.filter_quad.items():
+                quad.setShaderInput(name, value)
+
+        #stick the last stage quad to render2d
+        #this is a bit ugly...
+        if 'name' in self.filter_stages[-1]:
+            last_stage=self.filter_stages[-1]['name']
+        else:
+            last_stage=self.filter_stages[-1]['shader_name']
+        self.filter_quad[last_stage]=self.lightbuffer.getTextureCard()
+        self.reloadFilter(last_stage)
+        self.filter_quad[last_stage].reparentTo(render2d)
+
+        #listen to window events so that buffers can be resized with the window
+        self.accept("window-event", self.on_window_event)
+        #update task
+        taskMgr.add(self.update, 'update_tsk')
+
+    def reloadFilter(self, stage_name):
+        id=self.getFilterStageIndex(stage_name)
+        shader_name=self.filter_stages[id]['shader_name']
+        inputs={}
+        if 'inputs' in self.filter_stages[id]:
+            inputs=self.filter_stages[id]['inputs']
+        define=None
+        if 'define' in self.filter_stages[id]:
+            define=self.filter_stages[id]['define']
+        self.filter_quad[stage_name].setShader(loader.loadShaderGLSL(self.v.format(shader_name), self.f.format(shader_name), define))
+        for name, value in inputs.items():
+            if isinstance(value, basestring):
+                value=loader.loadTexture(value)
+            self.filter_quad[stage_name].setShaderInput(str(name), value)
+        for name, value in self.common_inputs.items():
+            self.filter_quad[stage_name].setShaderInput(name, value)
+        if 'translate_tex_name' in self.filter_stages[id]:
+            for old_name, new_name in self.filter_stages[id]['translate_tex_name'].items():
+                value=self.filter_tex[old_name]
+                self.filter_quad[stage_name].setShaderInput(str(new_name), value)
+
+    def getFilterDefine(self, stage_name, name):
+        if stage_name in self.filter_quad:
+            id=self.getFilterStageIndex(stage_name)
+            if 'define' in self.filter_stages[id]:
+                if name in self.filter_stages[id]['define']:
+                    return self.filter_stages[id]['define'][name]
+        return None
+
+    def setFilterDefine(self, stage_name, name, value):
+        if stage_name in self.filter_quad:
+            id=self.getFilterStageIndex(stage_name)
+            if 'define' in self.filter_stages[id]:
+                if value is None:
+                    del self.filter_stages[id]['define'][name]
+                else:
+                    self.filter_stages[id]['define'][name]=value
+            elif value is not None:
+                self.filter_stages[id]['define']={name:value}
+            #reload the shader
+            self.reloadFilter(stage_name)
+
+    def getFilterStageIndex(self, name):
+        for index, stage in enumerate(self.filter_stages):
+            if 'name' in stage:
+                if stage['name']==name:
+                    return index
+            elif stage['shader_name']==name:
+                return index
+        raise IndexError('No stage named '+name)
+
+    def setFilterInput(self, stage_name, name, value, modify_using=None):
+        if stage_name in self.filter_quad:
+            id=self.getFilterStageIndex(stage_name)
+            if modify_using is not None:
+                value=modify_using(self.filter_stages[id]['inputs'][name], value)
+                self.filter_stages[id]['inputs'][name]=value
+            if isinstance(value, basestring):
+                value=loader.loadTexture(value)
+            self.filter_quad[stage_name].setShaderInput(str(name), value)
+            #print stage_name, name, value
+
+    def setupGbuffer(self, define=None):
         self.modelbuffer = self.makeFBO("model buffer", 1)
         self.lightbuffer = self.makeFBO("light buffer", 0)
 
@@ -45,8 +244,6 @@ class DeferredRenderer(DirectObject):
         self.lit_tex = Texture()
         self.lit_tex.setWrapU(Texture.WM_clamp)
         self.lit_tex.setWrapV(Texture.WM_clamp)
-
-        self.aux=Texture()
 
         self.modelbuffer.addRenderTexture(tex = self.depth,
                                           mode = GraphicsOutput.RTMBindOrCopy,
@@ -115,7 +312,7 @@ class DeferredRenderer(DirectObject):
         #root node and a list for the lights
         self.lights=[]
         self.light_root=render.attachNewNode('light_root')
-        self.light_root.setShader((Shader.load(Shader.SLGLSL, 'shaders/light_v.glsl', 'shaders/light_f.glsl')))
+        self.light_root.setShader(loader.loadShaderGLSL( self.v.format('light'), self.f.format('light'), define))
         self.light_root.setShaderInput("albedo_tex", self.albedo)
         self.light_root.setShaderInput("depth_tex", self.depth)
         self.light_root.setShaderInput("normal_tex", self.normal)
@@ -126,90 +323,16 @@ class DeferredRenderer(DirectObject):
         #self.light_root.hide(BitMask32(self.plainMask))
 
         self.geometry_root=render.attachNewNode('geometry_root')
-        self.geometry_root.setShader((Shader.load(Shader.SLGLSL, 'shaders/geometry_v.glsl', 'shaders/geometry_f.glsl')))
+        self.geometry_root.setShader(loader.loadShaderGLSL( self.v.format('geometry'), self.f.format('geometry'), define))
         self.geometry_root.hide(BitMask32(self.lightMask))
         #self.geometry_root.hide(BitMask32(self.plainMask))
 
         self.plain_root, self.plain_tex, self.plain_cam, self.plain_buff=self.makeForwardStage()
-        self.plain_root.setShader((Shader.load(Shader.SLGLSL, 'shaders/forward_v.glsl', 'shaders/forward_f.glsl')))
+        self.plain_root.setShader(loader.loadShaderGLSL( self.v.format('forward'), self.f.format('forward'), define))
         self.plain_root.setShaderInput("depth_tex", self.depth)
         self.plain_root.setShaderInput('win_size', Vec2(base.win.getXSize(), base.win.getYSize()))
         self.plain_root.hide(BitMask32(self.lightMask))
         self.plain_root.hide(BitMask32(self.modelMask))
-
-        #post process
-        self.filter_buff={}
-        self.filter_quad={}
-        self.filter_tex={}
-        self.common_inputs={'render':render,
-                            'camera': base.cam,
-                            'depth_tex': self.depth,
-                            'normal_tex': self.normal,
-                            'albedo_tex': self.albedo,
-                            'lit_tex': self.lit_tex,
-                            'forward_tex':self.plain_tex}
-
-        self.filter_stages=[{'shader_name':'ao',
-                             'inputs':{'random_tex':'data/random.png',
-                                       'random_size':64.0,
-                                        'sample_rad': 0.4,
-                                        'intensity': 10.0,
-                                        'scale': 0.9,
-                                        'bias': 0.4,
-                                        'fade_distance': 80.0}},
-                            {'name':'final_light','shader_name':'dir_light',
-                            'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
-                            {'shader_name':'fog',
-                            'inputs':{'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
-                                      'fog_config': Vec4(1.0, 100.0, 2.0, 1.0), #start, stop, power, mix
-                                      'dof_near': 0.5,
-                                      'dof_far': 60.0}},
-                            {'shader_name':'ssr','inputs':{}},
-                            {'shader_name':'bloom',
-                            'size_factor':0.5,
-                            'inputs':{'glow_power': 5.0}},
-                            {'name':'bloom_blur', 'shader_name':'blur',
-                             'inputs':{'blur':3.0},
-                             'size_factor':0.5},
-                            {'name':'compose','shader_name':'mix',
-                            'inputs':{'lut_tex':'data/lut_v1.png',
-                                      'noise_tex':'data/noise.png'}},
-                            {'name':'pre_aa','shader_name':'dof',
-                             'inputs':{'blur':6.0}},
-                            {'shader_name':'fxaa',
-                            'inputs':{ 'FXAA_SPAN_MAX' : 2.0,
-                                       'FXAA_REDUCE_MUL': float(1.0/16.0),
-                                       'FXAA_SUBPIX_SHIFT': float(1.0/8.0)}}
-                            ]
-
-        for stage in self.filter_stages[:-1]:
-            self.addFilter(**stage)
-        for name, tex in self.filter_tex.items():
-            self.common_inputs[name]=tex
-        for name, value in self.common_inputs.items():
-            for filter_name, quad in self.filter_quad.items():
-                quad.setShaderInput(name, value)
-
-        #stick the last stage quad to render2d
-        #this is a bit ugly...
-        if 'name' in self.filter_stages[-1]:
-            last_stage=self.filter_stages[-1]['name']
-        else:
-            last_stage=self.filter_stages[-1]['shader_name']
-        self.filter_quad[last_stage]=self.lightbuffer.getTextureCard()
-        shader_name=self.filter_stages[-1]['shader_name']
-        inputs=self.filter_stages[-1]['inputs']
-        self.filter_quad[last_stage].setShader(Shader.load(Shader.SLGLSL, self.v.format(shader_name), self.f.format(shader_name)))
-        for name, value in inputs.items():
-            if isinstance(value, basestring):
-                value=loader.loadTexture(value)
-            self.filter_quad[last_stage].setShaderInput(str(name), value)
-        for name, value in self.common_inputs.items():
-            self.filter_quad[last_stage].setShaderInput(name, value)
-        self.filter_quad[last_stage].reparentTo(render2d)
-
-        self.accept("window-event", self.on_window_event)
-        taskMgr.add(self.update, 'update_tsk')
 
     def on_window_event(self, window):
         if window is not None:
@@ -225,7 +348,10 @@ class DeferredRenderer(DirectObject):
                     buff.setSize(int(window_size[0]*x_factor),int(window_size[1]*y_factor))
                 self.last_window_size=window_size
 
-    def addFilter(self, shader_name, inputs, name=None, size_factor=1.0, clear_color=None):
+    def addFilter(self, shader_name, inputs,
+                  name=None, size_factor=1.0,
+                  clear_color=None, translate_tex_name=None,
+                  define=None):
         if name is None:
             name=shader_name
         index=len(self.filter_buff)
@@ -234,7 +360,7 @@ class DeferredRenderer(DirectObject):
         self.filter_quad[name]=quad
         self.filter_tex[name]=tex
 
-        quad.setShader(Shader.load(Shader.SLGLSL, self.v.format(shader_name), self.f.format(shader_name)))
+        quad.setShader(loader.loadShaderGLSL(self.v.format(shader_name), self.f.format(shader_name), define))
         #common inputs
         quad.setShaderInput('render', render)
         quad.setShaderInput('camera', base.cam)
@@ -246,7 +372,10 @@ class DeferredRenderer(DirectObject):
             if isinstance(value, basestring):
                 value=loader.loadTexture(value)
             quad.setShaderInput(str(name), value)
-
+        if translate_tex_name:
+            for old_name, new_name in translate_tex_name.items():
+                value=self.filter_tex[old_name]
+                quad.setShaderInput(str(new_name), value)
 
     def makeFilterStage(self, sort=0, size=1.0, clear_color=None):
         #make a root for the buffer
@@ -333,7 +462,7 @@ class DeferredRenderer(DirectObject):
         self.lights[-1].setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
         self.lights[-1].setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
 
-        self.lights[-1].setShader((Shader.load(Shader.SLGLSL, 'shaders/spot_light_v.glsl', 'shaders/spot_light_f.glsl')))
+        self.lights[-1].setShader(loader.loadShaderGLSL( 'shaders/spot_light_v.glsl', 'shaders/spot_light_f.glsl'))
         self.lights[-1].setShaderInput("light_radius", float(radius))
         self.lights[-1].setShaderInput("light_pos", Vec4(pos,1.0))
         self.lights[-1].setShaderInput("light_fov", deg2Rad(fov))
@@ -418,6 +547,7 @@ class WrappedLoader(object):
         self.original_loader=original_loader
         self.texture_shader_inputs=[]
         self.fix_srgb=ConfigVariableBool('framebuffer-srgb').getValue()
+        self.shader_cache={}
 
     def fixTransparancy(self, model):
         for tex_stage in model.findAllTextureStages():
@@ -586,6 +716,32 @@ class WrappedLoader(object):
     def unloadSfx(self, sfx):
         self.original_loader.unloadSfx( sfx)
 
+    def loadShaderGLSL(self, v_shader, f_shader, define=None, version='#version 140'):
+        #check if we already have a shader like that
+        #note: this may fail depending on the dict implementation
+        if (v_shader, f_shader, str(define)) in self.shader_cache:
+            return self.shader_cache[(v_shader, f_shader, str(define))]
+        #load the shader text
+        with open(v_shader) as f:
+            v_shader_txt = f.read()
+        with open(f_shader) as f:
+            f_shader_txt = f.read()
+        #make the header
+        if define:
+            header=version+'\n'
+            for name, value in define.items():
+                header+='#define {0} {1}\n'.format(name, value)
+            #put the header on top
+            v_shader_txt=v_shader_txt.replace(version, header)
+            f_shader_txt=f_shader_txt.replace(version, header)
+        #make the shader
+        shader= Shader.make(Shader.SL_GLSL,v_shader_txt, f_shader_txt)
+        #store it
+        self.shader_cache[(v_shader, f_shader, str(define))]=shader
+        shader.set_filename(Shader.ST_vertex, v_shader)
+        shader.set_filename(Shader.ST_fragment, f_shader)
+        return shader
+
     def loadShader(self, shaderPath, okMissing = False):
         return self.original_loader.loadShader(shaderPath, okMissing)
 
@@ -595,58 +751,3 @@ class WrappedLoader(object):
     def asyncFlattenStrong(self, model, inPlace = True,
                            callback = None, extraArgs = []):
         self.original_loader.asyncFlattenStrong(model, inPlace, callback, extraArgs)
-
-#helper calss
-class Wrapper(object):
-    def __init__(self,wrapped_object):
-        self.wrapped_object = wrapped_object
-
-        self.pre_hooks={}
-        self.pre_hooks_args={}
-        self.post_hooks={}
-        self.post_hooks_args={}
-
-    def set_pre_hook(self, function_name, function_to_call, args=None):
-        self.pre_hooks[function_name]=function_to_call
-        if args is not None:
-            if not isinstance(args, (tuple, list, set)):
-                args=[args]
-            self.pre_hooks_args[function_name]=args
-
-    def set_post_hook(self, function_name, function_to_call, args=None):
-        self.post_hooks[function_name]=function_to_call
-        if args is not None:
-            if not isinstance(args, (tuple, list, set)):
-                args=[args]
-            self.post_hooks_args[function_name]=args
-
-    def __getattr__(self,attr):
-        orig_attr = self.wrapped_object.__getattribute__(attr)
-        if callable(orig_attr):
-            def hooked(*args, **kwargs):
-                self.pre_hook(attr)
-                result = orig_attr(*args, **kwargs)
-                # prevent wrapped_object from becoming unwrapped
-                if result == self.wrapped_object:
-                    return self
-                self.post_hook(attr)
-                return result
-            return hooked
-        else:
-            return orig_attr
-
-    def pre_hook(self, attr):
-        attr=str(attr)
-        if attr in self.pre_hooks:
-            if attr in self.pre_hooks_args:
-                self.pre_hooks[attr](*self.pre_hooks_args[attr])
-            else:
-                self.pre_hooks[attr]()
-
-    def post_hook(self, attr):
-        attr=str(attr)
-        if attr in self.post_hooks:
-            if attr in self.post_hooks_args:
-                self.post_hooks[attr](*self.post_hooks_args[attr])
-            else:
-                self.post_hooks[attr]()

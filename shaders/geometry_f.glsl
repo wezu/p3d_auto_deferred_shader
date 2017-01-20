@@ -116,8 +116,12 @@ void main()
     {
     vec3 ts_v = normalize(TS_V);
     vec3 n=normalize(N);
+    #ifndef DISABLE_POM
     vec2 final_uv=occlusionPallaxMapping(ts_v, UV);
-    //vec2 final_uv=UV;
+    #endif
+    #ifdef DISABLE_POM
+    vec2 final_uv=UV;
+    #endif
 
     vec4 shga_map=texture(tex_shga,final_uv);
     if (shga_map.a <0.5)

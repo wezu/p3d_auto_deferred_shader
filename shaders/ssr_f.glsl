@@ -103,9 +103,11 @@ void main()
     //view space normal, it's a floating point tex,
     //normalized before writing, ready to use
     vec4 normal_map= texture(normal_tex, uv);
+    float gloss=normal_map.a;
     vec3 N = unpack_normal_octahedron(normal_map.xy);
     //hardware depth
     float D = texture(depth_tex, uv).r;
+
     //view pos in camera space
     vec4 P = trans_apiclip_of_camera_to_apiview_of_camera * vec4( uv.xy,  D, 1.0);
     P.xyz /= P.w;
@@ -119,7 +121,7 @@ void main()
                        trans_apiview_of_camera_to_apiclip_of_camera,
                        final_light, depth_tex);
 
-    gl_FragData[0] =final*co;
+    gl_FragData[0] =final*co*gloss;
     //gl_FragData[0] =vec4(co,co,co, 1.0);
     }
 

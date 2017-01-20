@@ -13,13 +13,13 @@ from direct.showbase.DirectObject import DirectObject
 from deferred_render import DeferredRenderer
 from direct.interval.IntervalGlobal import *
 from direct.gui.OnscreenText import OnscreenText
-
+import operator
 
 class Demo(DirectObject):
     def __init__(self):
         base = ShowBase.ShowBase()
         #base.setBackgroundColor(0, 0, 0)
-        self.renderer=DeferredRenderer()
+        self.renderer=DeferredRenderer(preset='minimal')
         defered_render=self.renderer.geometry_root
 
         column=loader.loadModel("models/column")
@@ -50,14 +50,23 @@ class Demo(DirectObject):
         frowney.reparentTo(defered_render)
 
 
-        self.renderer.setDirectionalLight(Vec3(0.4, 0.4, 0.4), Vec3(-0.5, 0.5, 1.0))
+        self.renderer.setDirectionalLight(Vec3(0.2, 0.2, 0.2), Vec3(-0.5, 0.5, 1.0))
         #self.renderer.addConeLight(color=(0.8, 0.8, 0.8), pos=(0,-4,1), hpr=(0,-60,0), radius=15.0, fov=60.0)
-        #self.renderer.addLight(color=(0.3,0.3,0.5), pos=(2,3,2), radius=12.0)
-        self.accept('space', self.do_debug)
+        self.renderer.addLight(color=(0.3,0.3,0.5), pos=(2,3,2), radius=12.0)
+        self.accept('space', self.toggle_lut)
 
-    def do_debug(self):
-        for name, buff in self.renderer.filter_buff.items():
-            print name, buff.getFbSize()
+        self.accept('1', self.change_dof, [1.0])
+        self.accept('2', self.change_dof, [-1.0])
+
+    def change_dof(self, value):
+        self.renderer.setFilterInput('fog', 'dof_far', value, operator.add)
+
+    def toggle_lut(self):
+        current_value=self.renderer.getFilterDefine('compose','DISABLE_LUT')
+        if current_value is None:
+            self.renderer.setFilterDefine('compose', 'DISABLE_LUT', 1)
+        else:
+            self.renderer.setFilterDefine('compose', 'DISABLE_LUT', None)
 
 d=Demo()
 base.run()
