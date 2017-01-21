@@ -1,14 +1,23 @@
 //GLSL
 #version 140
 in vec2 uv;
-
-uniform sampler2D lut_tex;
-uniform sampler2D fog;
-uniform sampler2D ao;
-uniform sampler2D ssr;
 uniform sampler2D forward_tex;
+uniform sampler2D final_color;
+#ifndef DISABLE_LUT
+uniform sampler2D lut_tex;
+#endif
+#ifndef DISABLE_AO
+uniform sampler2D ao;
+#endif
+#ifndef DISABLE_SSR
+uniform sampler2D ssr;
+#endif
+#ifndef DISABLE_BLOOM
 uniform sampler2D bloom_blur;
+#endif
+#ifndef DISABLE_DITHERING
 uniform sampler2D noise_tex;
+#endif
 //uniform vec2 win_size;
 
 vec3 applyColorLUT(sampler2D lut, vec3 color)
@@ -28,9 +37,9 @@ vec3 applyColorLUT(sampler2D lut, vec3 color)
 
 void main()
     {
-    vec4 color=texture(fog,uv);
+    vec4 color=texture(final_color,uv);
     vec4 color_forward=texture(forward_tex,uv);
-    vec2 win_size=textureSize(fog, 0).xy;
+    vec2 win_size=textureSize(final_color, 0).xy;
     vec3 final_color=mix(color.rgb,color_forward.rgb, color_forward.a);
 
     #ifndef DISABLE_SSR

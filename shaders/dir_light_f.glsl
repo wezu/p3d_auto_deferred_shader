@@ -5,8 +5,15 @@ uniform sampler2D normal_tex;
 uniform sampler2D albedo_tex;
 uniform sampler2D lit_tex;
 uniform mat4 trans_apiclip_of_camera_to_apiview_of_camera;
+#ifndef NUM_LIGHTS
 uniform vec3 light_color;
 uniform vec3 direction;
+#endif
+#ifdef NUM_LIGHTS
+uniform vec3 light_color [NUM_LIGHTS];
+uniform vec3 direction [NUM_LIGHTS];
+#endif
+
 
 in vec2 uv;
 in vec4 light_direction;
@@ -60,14 +67,45 @@ void main()
     vec3 view_pos =getPosition(uv);
 
     vec3 color=vec3(0.0, 0.0, 0.0);
+    vec3 light_vec;
+    vec3 view_vec;
+    vec3 reflect_vec;
+    float spec;
+    float final_spec;
+    #ifndef NUM_LIGHTS
+        light_vec = normalize(light_direction.xyz);
+        #ifdef HALFLAMBERT
+        color+=light_color*pow(dot(normal.xyz,light_vec)*0.5+0.5, HALFLAMBERT);
+        #endif
+        #ifndef HALFLAMBERT
+        color+=light_color*max(dot(normal.xyz,light_vec), 0.0);
+        #endif
+        //spec
+        view_vec = normalize(-view_pos.xyz);
+        reflect_vec=normalize(reflect(light_vec,normal.xyz));
+        spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
+        spec*=dot(light_color, vec3(1.0, 1.0, 1.0));
+        final_spec+=spec;
+    #endif
+    #ifdef NUM_LIGHTS
+        for (int i=0; i<num_lights; ++i)
+            {
+            light_vec = normalize(light_direction[i].xyz);
+            #ifdef HALFLAMBERT
+            color+=light_color[i]*pow(dot(normal.xyz,light_vec)*0.5+0.5, HALFLAMBERT);
+            #endif
+            #ifndef HALFLAMBERT
+            color+=light_color[i]*max(dot(normal.xyz,light_vec), 0.0);
+            #endif
+            //spec
+            view_vec = normalize(-view_pos.xyz);
+            reflect_vec=normalize(reflect(light_vec,normal.xyz));
+            spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
+            spec*=dot(light_color[i], vec3(1.0, 1.0, 1.0));
+            final_spec+=spec;
+            }
+    #endif
 
-    vec3 light_vec = normalize(light_direction.xyz);
-    color+=light_color*max(dot(normal.xyz,light_vec), 0.0);
-    //spec
-    vec3 view_vec = normalize(-view_pos.xyz);
-    vec3 reflect_vec=normalize(reflect(light_vec,normal.xyz));
-    float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
-    spec*=dot(light_color, vec3(1.0, 1.0, 1.0));
     vec4 final=pre_light_tex+vec4((color*albedo)+light_color*spec, spec+gloss);
 
     final.rgb+=albedo*glow;

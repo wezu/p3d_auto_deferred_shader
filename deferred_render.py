@@ -9,9 +9,15 @@ from collections  import defaultdict
 from panda3d.core import *
 from direct.showbase.DirectObject import DirectObject
 
+__all__ = ['SphereLight','ConeLight','SceneLight','DeferredRenderer']
+
 class DeferredRenderer(DirectObject):
     def __init__(self, preset='medium', filter_setup=None, shading_setup=None, scene_mask=1, light_mask=2):
+        #check if there are other DeferredRenderer in buildins
+        if hasattr(builtins, 'deferred_renderer'):
+            raise RuntimeError('There can only be one DeferredRenderer')
 
+        builtins.deferred_renderer=self
         #template to load the shaders by name, without the directory and extension
         self.f='shaders/{}_f.glsl'
         self.v='shaders/{}_v.glsl'
@@ -51,10 +57,11 @@ class DeferredRenderer(DirectObject):
                                         'bias': 0.4,
                                         'fade_distance': 80.0}},
                             {'name':'final_light','shader_name':'dir_light',
+                            'define':{'HALFLAMBERT':2.0},
                             'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
-                            {'shader_name':'fog',
+                            {'name':'final_color','shader_name':'fog',
                             'inputs':{'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
-                                      'fog_config': Vec4(1.0, 100.0, 2.0, 1.0), #start, stop, power, mix
+                                      'fog_config': Vec4(10.0, 100.0, 2.0, 1.0), #start, stop, power, mix
                                       'dof_near': 0.5, #0.0..1.0 not distance!
                                       'dof_far': 60.0}}, #distance in units to full blur
                             {'shader_name':'ssr','inputs':{}},
@@ -75,9 +82,10 @@ class DeferredRenderer(DirectObject):
                                        'FXAA_SUBPIX_SHIFT': float(1.0/8.0)}}
                             ],
                     'minimal':[{'name':'final_light','shader_name':'dir_light',
+                                'define':{'HALFLAMBERT':1.0},
                                 'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
                                {'name':'compose','shader_name':'mix',
-                               'translate_tex_name':{'final_light':'fog'},
+                               'translate_tex_name':{'final_light':'final_color'},
                                 'define':{'DISABLE_SSR':1,
                                           'DISABLE_AO':1,
                                           'DISABLE_BLOOM':1,
@@ -100,8 +108,9 @@ class DeferredRenderer(DirectObject):
                                         'bias': 0.4,
                                         'fade_distance': 80.0}},
                             {'name':'final_light','shader_name':'dir_light',
+                            'define':{'HALFLAMBERT':2.0},
                             'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
-                            {'shader_name':'fog',
+                            {'name':'final_color','shader_name':'fog',
                             'inputs':{'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
                                       'fog_config': Vec4(1.0, 100.0, 2.0, 1.0), #start, stop, power, mix
                                       'dof_near': 0.5, #0.0..1.0 not distance!
@@ -310,7 +319,6 @@ class DeferredRenderer(DirectObject):
 
         # Create two subroots, to help speed cull traversal.
         #root node and a list for the lights
-        self.lights=[]
         self.light_root=render.attachNewNode('light_root')
         self.light_root.setShader(loader.loadShaderGLSL( self.v.format('light'), self.f.format('light'), define))
         self.light_root.setShaderInput("albedo_tex", self.albedo)
@@ -333,6 +341,10 @@ class DeferredRenderer(DirectObject):
         self.plain_root.setShaderInput('win_size', Vec2(base.win.getXSize(), base.win.getYSize()))
         self.plain_root.hide(BitMask32(self.lightMask))
         self.plain_root.hide(BitMask32(self.modelMask))
+
+        #instal into buildins
+        builtins.defered_render=self.geometry_root
+        builtins.forward_render=self.plain_root
 
     def on_window_event(self, window):
         if window is not None:
@@ -437,83 +449,79 @@ class DeferredRenderer(DirectObject):
         cam.node().setCameraMask(mask)
         return root, tex, cam, buff
 
-    def setDirectionalLight(self, color, direction):
+    def setDirectionalLight(self, color, direction, shadow_size=0):
         self.filter_quad['final_light'].setShaderInput('light_color', color)
         self.filter_quad['final_light'].setShaderInput('direction', direction)
 
-    def addConeLight(self, color, pos=(0,0,0), hpr=(0,0,0), radius=1.0, fov=45.0, model_size_margin=1.0):
+    def addConeLight(self, color, pos=(0,0,0), hpr=(0,0,0), radius=1.0, fov=45.0, shadow_size=0.0):
         if fov >179.0:
             fov=179.0
         xy_scale=math.tan(deg2Rad(fov*0.5))
         model=loader.loadModel("volume/cone")
-
         #temp=model.copyTo(self.plain_root)
-
-        self.lights.append(model)
-        self.lights[-1].reparentTo(self.light_root)
-        self.lights[-1].setScale(xy_scale, 1.0, xy_scale)
-        self.lights[-1].flattenStrong()
-        self.lights[-1].setScale(radius*model_size_margin)
-        self.lights[-1].setPos(pos)
-        self.lights[-1].setHpr(hpr)
+        #self.lights.append(model)
+        model.reparentTo(self.light_root)
+        model.setScale(xy_scale, 1.0, xy_scale)
+        model.flattenStrong()
+        model.setScale(radius)
+        model.setPos(pos)
+        model.setHpr(hpr)
         #debug=self.lights[-1].copyTo(self.plain_root)
-        self.lights[-1].setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
-        self.lights[-1].setAttrib(CullFaceAttrib.make(CullFaceAttrib.MCullCounterClockwise))
-        self.lights[-1].setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
-        self.lights[-1].setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
+        model.setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
+        model.setAttrib(CullFaceAttrib.make(CullFaceAttrib.MCullCounterClockwise))
+        model.setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
+        model.setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
 
-        self.lights[-1].setShader(loader.loadShaderGLSL( 'shaders/spot_light_v.glsl', 'shaders/spot_light_f.glsl'))
-        self.lights[-1].setShaderInput("light_radius", float(radius))
-        self.lights[-1].setShaderInput("light_pos", Vec4(pos,1.0))
-        self.lights[-1].setShaderInput("light_fov", deg2Rad(fov))
-        self.lights[-1].setShaderInput("light_pos", Vec4(pos,1.0))
+        model.setShader(loader.loadShaderGLSL(self.v.format('spot_light'), self.f.format('spot_light'), self.shading_setup))
+        model.setShaderInput("light_radius", float(radius))
+        model.setShaderInput("light_pos", Vec4(pos,1.0))
+        model.setShaderInput("light_fov", deg2Rad(fov))
+        model.setShaderInput("light_pos", Vec4(pos,1.0))
         p3d_light = render.attachNewNode(Spotlight("Spotlight"))
         p3d_light.setPos(render, pos)
         p3d_light.setHpr(render, hpr)
-        p3d_light.node().set_shadow_caster(True, 256, 256)
+        p3d_light.node().setExponent(20)
+        if shadow_size >0.0:
+            p3d_light.node().set_shadow_caster(True, 256, 256)
         #p3d_light.node().setCameraMask(self.modelMask)
-        self.lights[-1].setShaderInput("spot", p3d_light)
+        model.setShaderInput("spot", p3d_light)
         #p3d_light.node().showFrustum()
         p3d_light.node().getLens().setFov(fov)
         p3d_light.node().getLens().setFar(radius)
         p3d_light.node().getLens().setNear(1.0)
+        return model, p3d_light
 
-    def addLight(self, color, model="volume/sphere", pos=(0,0,0), radius=1.0):
+    def addPointLight(self, color, model="volume/sphere", pos=(0,0,0), radius=1.0, shadow_size=0):
         #light geometry
         if not isinstance(model, NodePath): #if we got a NodePath we use it as the geom for the light
             model=loader.loadModel(model)
-        self.lights.append(model)
-        self.lights[-1].reparentTo(self.light_root)
-        self.lights[-1].setPos(pos)
-        self.lights[-1].setScale(radius)
-        self.lights[-1].setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
-        self.lights[-1].setAttrib(CullFaceAttrib.make(CullFaceAttrib.MCullCounterClockwise))
-        self.lights[-1].setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
-        self.lights[-1].setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
+        #self.lights.append(model)
+        model.reparentTo(self.light_root)
+        model.setPos(pos)
+        model.setScale(radius)
+        model.setShader(loader.loadShaderGLSL(self.v.format('light'), self.f.format('light'), self.shading_setup))
+        model.setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
+        model.setAttrib(CullFaceAttrib.make(CullFaceAttrib.MCullCounterClockwise))
+        model.setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
+        model.setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
         #shader inpts
-        self.lights[-1].setShaderInput("light", Vec4(color,radius*radius))
-        self.lights[-1].setShaderInput("light_pos", Vec4(pos,1.0))
-
-        p3d_light = render.attachNewNode(PointLight("PointLight"))
-        p3d_light.setPos(render, pos)
-        p3d_light.node().set_shadow_caster(True, 256, 256)
-        p3d_light.node().setCameraMask(self.modelMask)
-        #p3d_light.node().showFrustum()
-        for i in range(6):
-            p3d_light.node().getLens(i).setNearFar(0.1, radius)
-        self.lights[-1].setShaderInput("shadowcaster", p3d_light)
-        self.lights[-1].setShaderInput("near", 0.1)
-        self.lights[-1].setShaderInput("bias", 0.012)
-        #self.lights[-1].setShaderInput("camera", base.cam)
-
-        #return the index of the light to remove it later
-        return self.lights.index(self.lights[-1])
-
-    def removeLight(self, lightID):
-        if self.lights[lightID]:
-            self.lights[lightID].removeNode()
-            self.lights[lightID]=None
-
+        model.setShaderInput("light", Vec4(color,radius*radius))
+        model.setShaderInput("light_pos", Vec4(pos,1.0))
+        if shadow_size > 0:
+            model.setShader(loader.loadShaderGLSL(self.v.format('light_shadow'), self.f.format('light_shadow'), self.shading_setup))
+            p3d_light = render.attachNewNode(PointLight("PointLight"))
+            p3d_light.setPos(render, pos)
+            p3d_light.node().set_shadow_caster(True, shadow_size, shadow_size)
+            p3d_light.node().setCameraMask(self.modelMask)
+            #p3d_light.node().showFrustum()
+            for i in range(6):
+                p3d_light.node().getLens(i).setNearFar(0.1, radius)
+            model.setShaderInput("shadowcaster", p3d_light)
+            model.setShaderInput("near", 0.1)
+            model.setShaderInput("bias", 0.012)
+        else:
+            p3d_light = render.attachNewNode('dummy_node')
+        return model, p3d_light
 
     def makeFBO(self, name, auxrgba=0):
         # This routine creates an offscreen buffer.  All the complicated
@@ -751,3 +759,150 @@ class WrappedLoader(object):
     def asyncFlattenStrong(self, model, inPlace = True,
                            callback = None, extraArgs = []):
         self.original_loader.asyncFlattenStrong(model, inPlace, callback, extraArgs)
+
+class SceneLight(object):
+    def __init__(self, color, direction, shadow_size=0):
+        if not hasattr(builtins, 'deferred_renderer'):
+            raise RuntimeError('You need a DeferredRenderer')
+        deferred_renderer.setDirectionalLight(color, direction, shadow_size=0)
+        self.color=color
+        self.direction=direction
+        self.shadow_size=shadow_size
+
+    def setColor(self, color):
+        deferred_renderer.setDirectionalLight(color, self.direction, self.shadow_size)
+
+    def setDirection(self, direction):
+        deferred_renderer.setDirectionalLight(self.color, direction, self.shadow_size)
+
+    def remove(self):
+        deferred_renderer.setDirectionalLight((0,0,0), self.direction, self.shadow_size)
+
+    def __del__(self):
+        self.remove()
+
+
+class SphereLight(object):
+    def __init__(self, color, pos, radius, shadow_size=0):
+        if not hasattr(builtins, 'deferred_renderer'):
+            raise RuntimeError('You need a DeferredRenderer')
+        self.radius=radius
+        self.color=color
+        self.geom, self.p3d_light=deferred_renderer.addPointLight(color=color,
+                                                            model="volume/sphere",
+                                                            pos=pos,
+                                                            radius=radius,
+                                                            shadow_size=shadow_size)
+    def setColor(self, color):
+        self.geom.setShaderInput("light", Vec4(color,self.radius*self.radius))
+        self.color=color
+
+    def setRadius(self, radius):
+        self.geom.setShaderInput("light", Vec4(self.color,radius*radius))
+        self.geom.setScale(radius)
+        self.radius=radius
+        try:
+            for i in range(6):
+                self.p3d_light.node().getLens(i).setNearFar(0.1, radius)
+        except:
+            pass
+
+    def setPos(self, pos):
+        self.geom.setShaderInput("light_pos", Vec4(pos,1.0))
+        self.geom.setPos(render, pos)
+        self.p3d_light.setPos(render, pos)
+
+    def remove(self):
+        self.geom.removeNode()
+        try:
+            buff=self.p3d_light.node().getShadowBuffer(base.win.getGsg())
+            buff.clearRenderTextures()
+            base.win.getGsg().getEngine().removeWindow(buff)
+            self.p3d_light.node().setShadowCaster(False)
+        except:
+            pass
+        self.p3d_light.removeNode()
+
+    def __del__(self):
+        self.remove()
+
+class ConeLight(object):
+    def __init__(self, color, pos, radius, fov, hpr=None, look_at=None, shadow_size=0):
+        if not hasattr(builtins, 'deferred_renderer'):
+            raise RuntimeError('You need a DeferredRenderer')
+        self.radius=radius
+        self.color=color
+        self.pos=pos
+        self.hpr=hpr
+        self.fov=fov
+        self.shadow_size=shadow_size
+        if hpr is None:
+            dummy=render.attachNewNode('dummy')
+            dummy.setPos(pos)
+            dummy.lookAt(look_at)
+            hpr=dummy.getHpr(render)
+            dummy.removeNode()
+        self.hpr=hpr
+        self.geom, self.p3d_light=deferred_renderer.addConeLight(color=color,
+                                                                 pos=pos,
+                                                                 hpr=hpr,
+                                                                 radius=radius,
+                                                                 fov=fov,
+                                                                 shadow_size=shadow_size)
+
+    def setFov(self, fov):
+        if fov >179.0:
+            fov=179.0
+        self.p3d_light.node().getLens().setFov(fov)
+        #we might as well start from square 1...
+        self.geom.removeNode()
+        xy_scale=math.tan(deg2Rad(fov*0.5))
+        self.geom=loader.loadModel("volume/cone")
+        self.geom.reparentTo(deferred_renderer.light_root)
+        self.geom.setScale(xy_scale, 1.0, xy_scale)
+        self.geom.flattenStrong()
+        self.geom.setScale(self.radius)
+        self.geom.setPos(self.pos)
+        self.geom.setHpr(self.hpr)
+        self.geom.setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
+        self.geom.setAttrib(CullFaceAttrib.make(CullFaceAttrib.MCullCounterClockwise))
+        self.geom.setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
+        self.geom.setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
+        self.geom.setShader(loader.loadShaderGLSL(deferred_renderer.v.format('spot_light'), deferred_renderer.f.format('spot_light'), deferred_renderer.shading_setup))
+        self.geom.setShaderInput("light_radius", float(self.radius))
+        self.geom.setShaderInput("light_pos", Vec4(self.pos,1.0))
+        self.geom.setShaderInput("light_fov", deg2Rad(fov))
+        self.geom.setShaderInput("spot", self.p3d_light)
+
+    def setRadius(self, radius):
+        self.geom.setShaderInput("light_radius", float(self.radius))
+        self.geom.setScale(self.radius)
+        self.radius=radius
+        try:
+            self.p3d_light.node().getLens().setNearFar(0.1, radius)
+        except:
+            pass
+
+    def setHpr(self, hpr):
+        self.geom.setHpr(hpr)
+        self.p3d_light.setHpr(hpr)
+        self.hpr=hrp
+
+    def setPos(self, pos):
+        self.geom.setPos(pos)
+        self.p3d_light.setPos(pos)
+        self.pos=pos
+
+    def remove(self):
+        self.geom.removeNode()
+        try:
+            buff=self.p3d_light.node().getShadowBuffer(base.win.getGsg())
+            buff.clearRenderTextures()
+            base.win.getGsg().getEngine().removeWindow(buff)
+            self.p3d_light.node().setShadowCaster(False)
+        except:
+            pass
+        self.p3d_light.removeNode()
+
+    def __del__(self):
+        self.remove()
