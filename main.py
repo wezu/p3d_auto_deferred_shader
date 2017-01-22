@@ -1,3 +1,4 @@
+from __future__ import print_function
 from panda3d.core import *
 #loadPrcFileData("", "show-buffers 1")
 loadPrcFileData("", "shadow-depth-bits 32")
@@ -18,7 +19,7 @@ import operator
 class Demo(DirectObject):
     def __init__(self):
         base = ShowBase.ShowBase()
-        self.renderer=DeferredRenderer(preset='full')
+        DeferredRenderer(preset='full')
 
         column=loader.loadModel("models/column")
         column.reparentTo(defered_render)
@@ -45,7 +46,8 @@ class Demo(DirectObject):
         #lights will vanish once out of scope, so keep a reference!
         #... but you can also remove lights by doing 'del self.light_1' or 'self.light_1=None'
         #also use keywords! else you'll never know what SphereLight((0.4,0.4,0.6), (0.9,0.0,2.0), 8.0, 256) is!!!
-        self.light_0=SceneLight(color=(0.1, 0.1, 0.12), direction=(-0.5, 0.5, 1.0))
+        self.light_0=SceneLight(color=(0.3, 0.3, 0.1), direction=(-0.5, 0.5, 1.0))
+        self.light_0.addLight(color=(0.0, 0.0, 0.2), direction=(0.0, 0.0, 1.0), name='ambient') #not recomended but working
         self.light_1=SphereLight(color=(0.4,0.4,0.6), pos=(2,3,2), radius=8.0, shadow_size=0)
         self.light_2=ConeLight(color=(0.8, 0.8, 0.4), pos=(0,0,5), look_at=(10, 0, 0), radius=15.0, fov=30.0, shadow_size=0)
 
@@ -54,17 +56,21 @@ class Demo(DirectObject):
         self.accept('2', self.change_dof, [-1.0])
 
     def do_debug(self):
-        del self.light_2
+        #self.light_1.radius=30
+        #self.light_2.look_at((5, 1, 0))
+        n=self.light_0.removeLight('ambient')
+        if not n:
+            self.light_0.removeLight('main')
 
     def change_dof(self, value):
-        self.renderer.setFilterInput('fog', 'dof_far', value, operator.add)
+        deferred_renderer.setFilterInput('fog', 'dof_far', value, operator.add)
 
     def toggle_lut(self):
-        current_value=self.renderer.getFilterDefine('compose','DISABLE_LUT')
+        current_value=deferred_renderer.getFilterDefine('compose','DISABLE_LUT')
         if current_value is None:
-            self.renderer.setFilterDefine('compose', 'DISABLE_LUT', 1)
+            deferred_renderer.setFilterDefine('compose', 'DISABLE_LUT', 1)
         else:
-            self.renderer.setFilterDefine('compose', 'DISABLE_LUT', None)
+            deferred_renderer.setFilterDefine('compose', 'DISABLE_LUT', None)
 
 d=Demo()
 base.run()

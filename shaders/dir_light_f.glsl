@@ -8,15 +8,17 @@ uniform mat4 trans_apiclip_of_camera_to_apiview_of_camera;
 #ifndef NUM_LIGHTS
 uniform vec3 light_color;
 uniform vec3 direction;
+in vec4 light_direction;
 #endif
 #ifdef NUM_LIGHTS
 uniform vec3 light_color [NUM_LIGHTS];
 uniform vec3 direction [NUM_LIGHTS];
+in vec4 light_direction[NUM_LIGHTS];
 #endif
 
 
 in vec2 uv;
-in vec4 light_direction;
+
 
 // For each component of v, returns -1 if the component is < 0, else 1
 vec2 sign_not_zero(vec2 v)
@@ -70,8 +72,8 @@ void main()
     vec3 light_vec;
     vec3 view_vec;
     vec3 reflect_vec;
-    float spec;
-    float final_spec;
+    float spec=0.0;
+    vec3 final_spec=vec3(0.0, 0.0, 0.0);
     #ifndef NUM_LIGHTS
         light_vec = normalize(light_direction.xyz);
         #ifdef HALFLAMBERT
@@ -84,11 +86,10 @@ void main()
         view_vec = normalize(-view_pos.xyz);
         reflect_vec=normalize(reflect(light_vec,normal.xyz));
         spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
-        spec*=dot(light_color, vec3(1.0, 1.0, 1.0));
-        final_spec+=spec;
+        final_spec=light_color*spec;
     #endif
     #ifdef NUM_LIGHTS
-        for (int i=0; i<num_lights; ++i)
+        for (int i=0; i<NUM_LIGHTS; ++i)
             {
             light_vec = normalize(light_direction[i].xyz);
             #ifdef HALFLAMBERT
@@ -100,13 +101,12 @@ void main()
             //spec
             view_vec = normalize(-view_pos.xyz);
             reflect_vec=normalize(reflect(light_vec,normal.xyz));
-            spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
-            spec*=dot(light_color[i], vec3(1.0, 1.0, 1.0));
-            final_spec+=spec;
+            spec+=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
+            final_spec+=light_color[i]*spec;
             }
     #endif
 
-    vec4 final=pre_light_tex+vec4((color*albedo)+light_color*spec, spec+gloss);
+    vec4 final=pre_light_tex+vec4((color*albedo)+final_spec, spec+gloss);
 
     final.rgb+=albedo*glow;
 
