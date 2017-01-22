@@ -9,10 +9,19 @@ import math
 from collections  import defaultdict
 from panda3d.core import *
 from direct.showbase.DirectObject import DirectObject
-
+__author__ = "wezu"
+__copyright__ = "Copyright 2017"
+__license__ = "ISC"
+__version__ = "0.1"
+__email__ = "wezu.dev@gmail.com"
 __all__ = ['SphereLight','ConeLight','SceneLight','DeferredRenderer']
 
 class DeferredRenderer(DirectObject):
+    """
+    DeferredRenderer is a singelton class that takes care of rendering
+    It installs itself in the buildins,
+    it also creates a deferred_render and forward_render nodes.
+    """
     def __init__(self, preset='medium', filter_setup=None, shading_setup=None, scene_mask=1, light_mask=2):
         #check if there are other DeferredRenderer in buildins
         if hasattr(builtins, 'deferred_renderer'):
@@ -39,7 +48,7 @@ class DeferredRenderer(DirectObject):
 
         self.shading_preset={'full':{},
                             'medium':{'DISABLE_POM':1},
-                            'minimal':{'DISABLE_POM':1, 'DISABLE_SHADOWS':1}
+                            'minimal':{'DISABLE_POM':1, 'DISABLE_SHADOWS':1, 'DISABLE_NORMALMAP':1}
                            }
         #set up the deferred rendering buffers
         if shading_setup:
@@ -47,7 +56,7 @@ class DeferredRenderer(DirectObject):
         else:
             self.shading_setup=self.shading_preset[preset]
 
-        self.setupGbuffer(self.shading_setup)
+        self._setupGbuffer(self.shading_setup)
 
         self.preset={'full':[{'shader_name':'ao',
                              'inputs':{'random_tex':'data/random.png',
@@ -172,12 +181,15 @@ class DeferredRenderer(DirectObject):
         self.filter_quad[last_stage].reparentTo(render2d)
 
         #listen to window events so that buffers can be resized with the window
-        self.accept("window-event", self.on_window_event)
-        #update task
-        taskMgr.add(self.update, 'update_tsk')
+        self.accept("window-event", self._on_window_event)
+        #_update task
+        taskMgr.add(self._update, '_update_tsk')
 
     def reloadFilter(self, stage_name):
-        id=self.getFilterStageIndex(stage_name)
+        """
+        Reloads the shader and inputs of a given filter stage
+        """
+        id=self._getFilterStageIndex(stage_name)
         shader_name=self.filter_stages[id]['shader_name']
         inputs={}
         if 'inputs' in self.filter_stages[id]:
@@ -198,16 +210,23 @@ class DeferredRenderer(DirectObject):
                 self.filter_quad[stage_name].setShaderInput(str(new_name), value)
 
     def getFilterDefine(self, stage_name, name):
+        """
+        Returns the current value of a shader pre-processor define for a given filter stage
+        """
         if stage_name in self.filter_quad:
-            id=self.getFilterStageIndex(stage_name)
+            id=self._getFilterStageIndex(stage_name)
             if 'define' in self.filter_stages[id]:
                 if name in self.filter_stages[id]['define']:
                     return self.filter_stages[id]['define'][name]
         return None
 
     def setFilterDefine(self, stage_name, name, value):
+        """
+        Sets a define value for the shader pre-processor for a given filter stage,
+        The shader for that filter stage gets reloaded, so no need to call reloadFilter()
+        """
         if stage_name in self.filter_quad:
-            id=self.getFilterStageIndex(stage_name)
+            id=self._getFilterStageIndex(stage_name)
             if 'define' in self.filter_stages[id]:
                 if value is None:
                     del self.filter_stages[id]['define'][name]
@@ -218,7 +237,10 @@ class DeferredRenderer(DirectObject):
             #reload the shader
             self.reloadFilter(stage_name)
 
-    def getFilterStageIndex(self, name):
+    def _getFilterStageIndex(self, name):
+        """
+        Returns the index of a filter stage
+        """
         for index, stage in enumerate(self.filter_stages):
             if 'name' in stage:
                 if stage['name']==name:
@@ -228,8 +250,13 @@ class DeferredRenderer(DirectObject):
         raise IndexError('No stage named '+name)
 
     def setFilterInput(self, stage_name, name, value, modify_using=None):
+        """
+        Sets a shader input for a given filter stage.
+        modify_using - should be an operator, like operator.add if you want to
+                       change the value of an input based on the current value
+        """
         if stage_name in self.filter_quad:
-            id=self.getFilterStageIndex(stage_name)
+            id=self._getFilterStageIndex(stage_name)
             if modify_using is not None:
                 value=modify_using(self.filter_stages[id]['inputs'][name], value)
                 self.filter_stages[id]['inputs'][name]=value
@@ -238,9 +265,12 @@ class DeferredRenderer(DirectObject):
             self.filter_quad[stage_name].setShaderInput(str(name), value)
             #print(stage_name, name, value)
 
-    def setupGbuffer(self, define=None):
-        self.modelbuffer = self.makeFBO("model buffer", 1)
-        self.lightbuffer = self.makeFBO("light buffer", 0)
+    def _setupGbuffer(self, define=None):
+        """
+        Creates all the needed buffers, nodes and attributes for a geometry buffer
+        """
+        self.modelbuffer = self._makeFBO("model buffer", 1)
+        self.lightbuffer = self._makeFBO("light buffer", 0)
 
         # Create four render textures: depth, normal, albedo, and final.
         # attach them to the various bitplanes of the offscreen buffers.
@@ -338,7 +368,7 @@ class DeferredRenderer(DirectObject):
         self.geometry_root.hide(BitMask32(self.lightMask))
         #self.geometry_root.hide(BitMask32(self.plainMask))
 
-        self.plain_root, self.plain_tex, self.plain_cam, self.plain_buff=self.makeForwardStage()
+        self.plain_root, self.plain_tex, self.plain_cam, self.plain_buff=self._makeForwardStage()
         self.plain_root.setShader(loader.loadShaderGLSL( self.v.format('forward'), self.f.format('forward'), define))
         self.plain_root.setShaderInput("depth_tex", self.depth)
         self.plain_root.setShaderInput('win_size', Vec2(base.win.getXSize(), base.win.getYSize()))
@@ -349,7 +379,12 @@ class DeferredRenderer(DirectObject):
         builtins.defered_render=self.geometry_root
         builtins.forward_render=self.plain_root
 
-    def on_window_event(self, window):
+    def _on_window_event(self, window):
+        """
+        Function called when something hapens to the main window
+        Currently it's only function is to resize all the buffers to fit
+        the new size of the window if the size of the window changed
+        """
         if window is not None:
             window_size=(base.win.getXSize(), base.win.getYSize())
             if self.last_window_size != window_size:
@@ -367,22 +402,21 @@ class DeferredRenderer(DirectObject):
                   name=None, size_factor=1.0,
                   clear_color=None, translate_tex_name=None,
                   define=None):
+        """
+        Creates and adds filter stage to the filter stage dicts:
+        the created buffer is put in self.filter_buff[name]
+        the created fullscreen quad is put in self.filter_quad[name]
+        the created fullscreen texture is put in self.filter_tex[name]
+        """
         if name is None:
             name=shader_name
         index=len(self.filter_buff)
-        quad, tex, buff=self.makeFilterStage(sort=index, size=size_factor, clear_color=clear_color)
+        quad, tex, buff=self.__makeFilterStage(sort=index, size=size_factor, clear_color=clear_color)
         self.filter_buff[name]=buff
         self.filter_quad[name]=quad
         self.filter_tex[name]=tex
 
         quad.setShader(loader.loadShaderGLSL(self.v.format(shader_name), self.f.format(shader_name), define))
-        #common inputs
-        quad.setShaderInput('render', render)
-        quad.setShaderInput('camera', base.cam)
-        quad.setShaderInput('depth_tex', self.depth)
-        quad.setShaderInput('normal_tex', self.normal)
-        quad.setShaderInput("albedo_tex", self.albedo)
-        quad.setShaderInput("lit_tex", self.lit_tex)
         for name, value in inputs.items():
             if isinstance(value, basestring):
                 value=loader.loadTexture(value)
@@ -392,7 +426,11 @@ class DeferredRenderer(DirectObject):
                 value=self.filter_tex[old_name]
                 quad.setShaderInput(str(new_name), value)
 
-    def makeFilterStage(self, sort=0, size=1.0, clear_color=None):
+    def _makeFilterStage(self, sort=0, size=1.0, clear_color=None):
+        """
+        Creates a buffer, quad, camera and texture needed for a filter stage
+        Use addFilter() not this function
+        """
         #make a root for the buffer
         root=NodePath("filterBufferRoot")
         tex=Texture()
@@ -433,7 +471,10 @@ class DeferredRenderer(DirectObject):
         quad.setLightOff()
         return quad, tex, buff
 
-    def makeForwardStage(self):
+    def _makeForwardStage(self):
+        """
+        Creates nodes, buffers and whatnot needed for forward rendering
+        """
         root=NodePath("forwardRoot")
         tex=Texture()
         tex.setWrapU(Texture.WM_clamp)
@@ -453,10 +494,18 @@ class DeferredRenderer(DirectObject):
         return root, tex, cam, buff
 
     def setDirectionalLight(self, color, direction, shadow_size=0):
+        """
+        Sets value for a directional light,
+        use the SceneLight class to set the lights!
+        """
         self.filter_quad['final_light'].setShaderInput('light_color', color)
         self.filter_quad['final_light'].setShaderInput('direction', direction)
 
     def addConeLight(self, color, pos=(0,0,0), hpr=(0,0,0), radius=1.0, fov=45.0, shadow_size=0.0):
+        """
+        Creates a spotlight,
+        use the ConeLight class, not this function!
+        """
         if fov >179.0:
             fov=179.0
         xy_scale=math.tan(deg2Rad(fov*0.5))
@@ -495,6 +544,10 @@ class DeferredRenderer(DirectObject):
         return model, p3d_light
 
     def addPointLight(self, color, model="volume/sphere", pos=(0,0,0), radius=1.0, shadow_size=0):
+        """
+        Creates a omni (point) light,
+        Use the SphereLight class to create lights!!!
+        """
         #light geometry
         if not isinstance(model, NodePath): #if we got a NodePath we use it as the geom for the light
             model=loader.loadModel(model)
@@ -526,13 +579,15 @@ class DeferredRenderer(DirectObject):
             p3d_light = render.attachNewNode('dummy_node')
         return model, p3d_light
 
-    def makeFBO(self, name, auxrgba=0):
-        # This routine creates an offscreen buffer.  All the complicated
-        # parameters are basically demanding capabilities from the offscreen
-        # buffer - we demand that it be able to render to texture on every
-        # bitplane, that it can support aux bitplanes, that it track
-        # the size of the host window, that it can render to texture
-        # cumulatively, and so forth.
+    def _makeFBO(self, name, auxrgba=0):
+        """
+        This routine creates an offscreen buffer.  All the complicated
+        parameters are basically demanding capabilities from the offscreen
+        buffer - we demand that it be able to render to texture on every
+        bitplane, that it can support aux bitplanes, that it track
+        the size of the host window, that it can render to texture
+        cumulatively, and so forth.
+        """
         winprops = WindowProperties()
         props = FrameBufferProperties()
         props.setRgbColor(True)
@@ -546,8 +601,10 @@ class DeferredRenderer(DirectObject):
             GraphicsPipe.BFRttCumulative | GraphicsPipe.BFRefuseWindow,
             base.win.getGsg(), base.win)
 
-
-    def update(self, task):
+    def _update(self, task):
+        """
+        Update task, currently only updates the forward rendering camera pos/hpr
+        """
         self.plain_cam.setPos(base.cam.getPos(render))
         self.plain_cam.setHpr(base.cam.getHpr(render))
         return task.again
@@ -756,6 +813,14 @@ class WrappedLoader(object):
 #light classes:
 
 class SceneLight(object):
+    """
+    Directional light(s) for the deferred renderer
+    Because of the way directional lights are implemented (fullscreen quad),
+    it's not very logical to have multiple SceneLights, but you can have multiple
+    directional lights as part of one SceneLight instance.
+    You can add and remove additional lights using addLight() and removeLight()
+    This class curently has no properies access :(
+    """
     def __init__(self, color=None, direction=None, main_light_name='main', shadow_size=0):
         if not hasattr(builtins, 'deferred_renderer'):
             raise RuntimeError('You need a DeferredRenderer')
@@ -767,6 +832,9 @@ class SceneLight(object):
             self.addLight(color=color, direction=direction, name=main_light_name, shadow_size=shadow_size)
 
     def addLight(self, color, direction, name, shadow_size=0):
+        """
+        Adds a directional light to this SceneLight
+        """
         if len(self.__color)==0:
             deferred_renderer.setDirectionalLight(color, direction, shadow_size)
             self.__color[name]=Vec3(color)
@@ -788,6 +856,10 @@ class SceneLight(object):
             deferred_renderer.setFilterInput('final_light', 'direction', directions)
 
     def removeLight(self, name=None):
+        """
+        Removes a light from this SceneLight,
+        if name is None, the 'main' light (created at init) is removed
+        """
         if name==None:
             name=self.main_light_name
         if name in self.__color:
@@ -815,12 +887,18 @@ class SceneLight(object):
         return False
 
     def setColor(self, color, name=None):
+        """
+        Sets light color
+        """
         if name==None:
             name=self.main_light_name
         deferred_renderer.setDirectionalLight(color, self.__direction[name], self.__shadow_size[name])
         self.__color[name]=color
 
     def setDirection(self, direction, name=None):
+        """
+        Sets light direction
+        """
         if name==None:
             name=self.main_light_name
         deferred_renderer.setDirectionalLight(self.__color[name], direction, self.__shadow_size[name])
@@ -835,6 +913,18 @@ class SceneLight(object):
 
 
 class SphereLight(object):
+    """
+    Point (omni) light for the deferred renderer.
+    Create a new SphereLight for each light you want to use,
+    remember to keep a reference to the light instance
+    the light will be removed by the garbage collector when it goes out of scope
+
+    It is recomended to use properties to configure the light after creation eg.
+    l=SphereLight(...)
+    l.pos=Point3(...)
+    l.color=(r,g,b)
+    l.radius= 13
+    """
     def __init__(self, color, pos, radius, shadow_size=0):
         if not hasattr(builtins, 'deferred_renderer'):
             raise RuntimeError('You need a DeferredRenderer')
@@ -847,10 +937,16 @@ class SphereLight(object):
                                                             shadow_size=shadow_size)
 
     def setColor(self, color):
+        """
+        Sets light color
+        """
         self.geom.setShaderInput("light", Vec4(color,self.__radius*self.__radius))
         self.__color=color
 
     def setRadius(self, radius):
+        """
+        Sets light radius
+        """
         self.geom.setShaderInput("light", Vec4(self.__color,radius*radius))
         self.geom.setScale(radius)
         self.__radius=radius
@@ -861,6 +957,10 @@ class SphereLight(object):
             pass
 
     def setPos(self, *args):
+        """
+        Sets light position,
+        you can pass in a NodePath as the first argument to make the pos relative to that node
+        """
         if len(args)<1:
             return
         elif len(args)==1: #one arg, must be a vector
@@ -916,6 +1016,23 @@ class SphereLight(object):
         self.setRadius(float(r))
 
 class ConeLight(object):
+    """
+    Spot light for the deferred renderer.
+    Create a new ConeLight for each light you want to use,
+    remember to keep a reference to the light instance
+    the light will be removed by the garbage collector when it goes out of scope
+
+    You can set the hpr of the light by passing a node or position as the look_at argument
+
+    It is recomended to use properties to configure the light after creation eg.
+    l=ConeLight(...)
+    l.pos=Point3(...)
+    l.color=(r,g,b)
+    l.radius= 13
+    l.fov=45.0
+    l.hpr=Point3(...)
+    the lookAt() function can also be used to set a hpr in a different way
+    """
     def __init__(self, color, pos, radius, fov, hpr=None, look_at=None, shadow_size=0):
         if not hasattr(builtins, 'deferred_renderer'):
             raise RuntimeError('You need a DeferredRenderer')
@@ -940,6 +1057,11 @@ class ConeLight(object):
                                                                  shadow_size=shadow_size)
 
     def setFov(self, fov):
+        """
+        Sets the Field of View (in degrees) of the light
+        Angles above 120 deg are not recomended,
+        Angles above 179 deg are not supported
+        """
         if fov >179.0:
             fov=179.0
         self.p3d_light.node().getLens().setFov(fov)
@@ -965,6 +1087,9 @@ class ConeLight(object):
         self.__fov=fov
 
     def setRadius(self, radius):
+        """
+        Sets the radius (range) of the light
+        """
         self.geom.setShaderInput("light_radius", float(radius))
         self.geom.setScale(radius)
         self.__radius=radius
@@ -974,11 +1099,18 @@ class ConeLight(object):
             pass
 
     def setHpr(self, hpr):
+        """
+        Sets the HPR of a light
+        """
         self.geom.setHpr(hpr)
         self.p3d_light.setHpr(hpr)
         self.__hpr=hrp
 
     def setPos(self, *args):
+        """
+        Sets light position,
+        you can pass in a NodePath as the first argument to make the pos relative to that node
+        """
         if len(args)<1:
             return
         elif len(args)==1: #one arg, must be a vector
@@ -996,9 +1128,15 @@ class ConeLight(object):
         self.__pos=pos
 
     def lookAt(self, node_or_pos):
+        """
+        Sets the hpr of the light so that it looks at the given node or pos
+        """
         self.look_at(node_or_pos)
 
     def look_at(self, node_or_pos):
+        """
+        Sets the hpr of the light so that it looks at the given node or pos
+        """
         self.geom.lookAt(node_or_pos)
         self.p3d_light.lookAt(node_or_pos)
         self.__hpr=self.p3d_light.getHpr(render)

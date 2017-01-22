@@ -8,7 +8,9 @@ in vec3 TS_V;
 //in vec4 V;
 
 uniform sampler2D tex_diffuse; //rgba color texture
+#ifdef DISABLE_NORMALMAP
 uniform sampler2D tex_normal; //rgba normal+gloss texture
+#endif
 uniform sampler2D tex_shga; //Shine Height Gloss Alpha
 
 // For each component of v, returns -1 if the component is < 0, else 1
@@ -128,15 +130,15 @@ void main()
         discard;
 
     vec4 color_map=texture(tex_diffuse,final_uv);
+    #ifdef DISABLE_NORMALMAP
     vec4 normal_map=texture(tex_normal,final_uv);
-
     //rescale normal
     vec3 normal=normal_map.xyz*2.0-1.0;
     n*=normal.z;
     n+=T*normal.x;
     n+=B*normal.y;
     n=normalize(n);
-
+    #endif
     float shine=shga_map.r;
     float glow=shga_map.b;
 
