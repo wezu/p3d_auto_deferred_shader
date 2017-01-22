@@ -411,7 +411,7 @@ class DeferredRenderer(DirectObject):
         if name is None:
             name=shader_name
         index=len(self.filter_buff)
-        quad, tex, buff=self.__makeFilterStage(sort=index, size=size_factor, clear_color=clear_color)
+        quad, tex, buff=self._makeFilterStage(sort=index, size=size_factor, clear_color=clear_color)
         self.filter_buff[name]=buff
         self.filter_quad[name]=quad
         self.filter_tex[name]=tex
