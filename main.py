@@ -14,6 +14,7 @@ from direct.showbase.DirectObject import DirectObject
 
 from deferred_render import *
 
+
 import operator
 
 class Demo(DirectObject):
@@ -24,22 +25,22 @@ class Demo(DirectObject):
         column=loader.loadModel("models/column")
         column.reparentTo(defered_render)
         column2=column.copyTo(defered_render)
-        column2.setPos(10.0, 0, 0)
+        column2.set_pos(10.0, 0, 0)
         column3=column.copyTo(defered_render)
-        column3.setPos(20.0, 0, 0)
+        column3.set_pos(20.0, 0, 0)
         column4=column.copyTo(defered_render)
-        column4.setPos(30.0, 0, 0)
+        column4.set_pos(30.0, 0, 0)
         column5=column.copyTo(defered_render)
-        column5.setPos(40.0, 0, 0)
+        column5.set_pos(40.0, 0, 0)
         column6=column.copyTo(defered_render)
-        column6.setPos(50.0, 0, 0)
+        column6.set_pos(50.0, 0, 0)
         box=loader.loadModel("models/box2")
-        box.setPos(2,2,0)
+        box.set_pos(2,2,0)
         box.setH(45)
         box.reparentTo(defered_render)
 
         frowney=loader.loadModel('frowney')
-        frowney.setPos(-2, -1, 1)
+        frowney.set_pos(-2, -1, 1)
         frowney.setH(90)
         frowney.reparentTo(defered_render)
 
@@ -47,7 +48,7 @@ class Demo(DirectObject):
         #... but you can also remove lights by doing 'del self.light_1' or 'self.light_1=None'
         #also use keywords! else you'll never know what SphereLight((0.4,0.4,0.6), (0.9,0.0,2.0), 8.0, 256) is!!!
         self.light_0=SceneLight(color=(0.3, 0.3, 0.1), direction=(-0.5, 0.5, 1.0))
-        self.light_0.addLight(color=(0.0, 0.0, 0.2), direction=(0.5, -0.5, -1.0), name='ambient') #not recomended but working
+        self.light_0.add_light(color=(0.0, 0.0, 0.2), direction=(0.5, -0.5, -1.0), name='ambient') #not recomended but working
         self.light_1=SphereLight(color=(0.4,0.4,0.6), pos=(2,3,2), radius=8.0, shadow_size=0)
         self.light_2=ConeLight(color=(0.8, 0.8, 0.4), pos=(0,0,5), look_at=(10, 0, 0), radius=15.0, fov=30.0, shadow_size=0)
 
@@ -60,25 +61,25 @@ class Demo(DirectObject):
     def do_debug(self):
         #self.light_1.radius=30
         #self.light_2.look_at((5, 1, 0))
-        #n=self.light_0.removeLight('ambient')
+        #n=self.light_0.remove_light('ambient')
         #if not n:
-        #    self.light_0.removeLight('main')
+        #    self.light_0.remove_light('main')
         if self.minimal==True:
-            deferred_renderer.resetFilters(deferred_renderer.preset['full'])
+            deferred_renderer.reset_filters(deferred_renderer.preset['full'])
             self.minimal=False
         else:
-            deferred_renderer.resetFilters(deferred_renderer.preset['minimal'])
+            deferred_renderer.reset_filters(deferred_renderer.preset['minimal'])
             self.minimal=True
 
     def change_dof(self, value):
-        deferred_renderer.setFilterInput('fog', 'dof_far', value, operator.add)
+        deferred_renderer.set_filter_input('fog', 'dof_far', value, operator.add)
 
     def toggle_lut(self):
-        current_value=deferred_renderer.getFilterDefine('compose','DISABLE_LUT')
+        current_value=deferred_renderer.get_filter_define('compose','DISABLE_LUT')
         if current_value is None:
-            deferred_renderer.setFilterDefine('compose', 'DISABLE_LUT', 1)
+            deferred_renderer.set_filter_define('compose', 'DISABLE_LUT', 1)
         else:
-            deferred_renderer.setFilterDefine('compose', 'DISABLE_LUT', None)
+            deferred_renderer.set_filter_define('compose', 'DISABLE_LUT', None)
 
 d=Demo()
 base.run()
