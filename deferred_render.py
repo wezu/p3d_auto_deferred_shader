@@ -67,7 +67,6 @@ class DeferredRenderer(DirectObject):
                                         'bias': 0.4,
                                         'fade_distance': 80.0}},
                             {'name':'final_light','shader_name':'dir_light',
-                            'define':{'HALFLAMBERT':2.0},
                             'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
                             {'shader_name':'fog',
                             'inputs':{'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
@@ -93,7 +92,7 @@ class DeferredRenderer(DirectObject):
                                        'FXAA_SUBPIX_SHIFT': float(1.0/8.0)}}
                             ],
                     'minimal':[{'name':'final_light','shader_name':'dir_light',
-                                'define':{'HALFLAMBERT':1.0},
+                                'define':{'HALFLAMBERT':2.0},
                                 'inputs':{'light_color': Vec3(0,0,0),'direction':Vec3(0,0,0)}},
                                {'name':'compose','shader_name':'mix',
                                'translate_tex_name':{'final_light':'final_color'},
@@ -150,6 +149,7 @@ class DeferredRenderer(DirectObject):
         self.filter_buff={}
         self.filter_quad={}
         self.filter_tex={}
+        self.filter_cam={}
         self.common_inputs={'render':render,
                             'camera': base.cam,
                             'depth_tex': self.depth,
@@ -184,6 +184,62 @@ class DeferredRenderer(DirectObject):
         self.accept("window-event", self._on_window_event)
         #_update task
         taskMgr.add(self._update, '_update_tsk')
+
+    def resetFilters(self, filter_setup):
+        """
+        Remove all filters and creates a new filter list using the given filter_setup (dict)
+        """
+        #special case - get the inputs for the directionl light(s)
+        dir_light_num_lights=self.getFilterDefine('final_light', 'NUM_LIGHTS')
+        dir_light_color=self.getFilterInput('final_light', 'light_color')
+        dir_light_dir=self.getFilterInput('final_light', 'direction')
+
+        #remove buffers
+        for buff in self.filter_buff.values():
+            buff.clearRenderTextures()
+            base.win.getGsg().getEngine().removeWindow(buff)
+        #remove quads, but keep the last one (detach it)
+        #the last one should also be self.lightbuffer.getTextureCard()
+        #so we don't need to keep a reference to it
+        if 'name' in self.filter_stages[-1]:
+            last_stage=self.filter_stages[-1]['name']
+        else:
+            last_stage=self.filter_stages[-1]['shader_name']
+        for name, quad in self.filter_quad.items():
+            if name!=last_stage:
+                quad.removeNode()
+            else:
+                quad.detachNode()
+        for cam in self.filter_cam.values():
+            cam.removeNode()
+        #load the new values
+        self.filter_buff={}
+        self.filter_quad={}
+        self.filter_tex={}
+        self.filter_cam={}
+        self.filter_stages=filter_setup
+        for stage in self.filter_stages[:-1]:
+            self.addFilter(**stage)
+        for name, tex in self.filter_tex.items():
+            self.common_inputs[name]=tex
+        for name, value in self.common_inputs.items():
+            for filter_name, quad in self.filter_quad.items():
+                quad.setShaderInput(name, value)
+        #stick the last stage quad to render2d
+        #this is a bit ugly...
+        if 'name' in self.filter_stages[-1]:
+            last_stage=self.filter_stages[-1]['name']
+        else:
+            last_stage=self.filter_stages[-1]['shader_name']
+        self.filter_quad[last_stage]=self.lightbuffer.getTextureCard()
+        self.reloadFilter(last_stage)
+        self.filter_quad[last_stage].reparentTo(render2d)
+
+        #reapply the directional lights
+        self.setFilterDefine('final_light', 'NUM_LIGHTS', dir_light_num_lights)
+        if dir_light_color:
+            self.setFilterInput('final_light', None, dir_light_color)
+            self.setFilterInput('final_light', None, dir_light_dir)
 
     def reloadFilter(self, stage_name):
         """
@@ -229,7 +285,8 @@ class DeferredRenderer(DirectObject):
             id=self._getFilterStageIndex(stage_name)
             if 'define' in self.filter_stages[id]:
                 if value is None:
-                    del self.filter_stages[id]['define'][name]
+                    if name in self.filter_stages[id]['define']:
+                        del self.filter_stages[id]['define'][name]
                 else:
                     self.filter_stages[id]['define'][name]=value
             elif value is not None:
@@ -249,6 +306,31 @@ class DeferredRenderer(DirectObject):
                 return index
         raise IndexError('No stage named '+name)
 
+    def getFilterInput(self, stage_name, name):
+        """
+        Returns the shader input from a given stage
+        """
+        if stage_name in self.filter_quad:
+            id=self._getFilterStageIndex(stage_name)
+            value= self.filter_quad[stage_name].getShaderInput(str(name))
+            return value
+            '''
+            value_type=value.getValueType()
+            print(name, value_type)
+
+            if value_type==ShaderInput.M_texture:
+                return value.getTexture()
+            elif value_type==ShaderInput.M_nodepath:
+                return value.getNodepath()
+            elif value_type==ShaderInput.M_vector:
+                return value.getVector()
+            elif value_type==ShaderInput.M_texture_sampler :
+                return value.getSampler()
+            elif value_type==ShaderInput.M_numeric:
+                return self.filter_quad[stage_name].getShaderInput(str(name))
+            '''
+        return None
+
     def setFilterInput(self, stage_name, name, value, modify_using=None):
         """
         Sets a shader input for a given filter stage.
@@ -257,6 +339,9 @@ class DeferredRenderer(DirectObject):
         """
         if stage_name in self.filter_quad:
             id=self._getFilterStageIndex(stage_name)
+            if name is None:
+                self.filter_quad[stage_name].setShaderInput(value)
+                return
             if modify_using is not None:
                 value=modify_using(self.filter_stages[id]['inputs'][name], value)
                 self.filter_stages[id]['inputs'][name]=value
@@ -411,10 +496,11 @@ class DeferredRenderer(DirectObject):
         if name is None:
             name=shader_name
         index=len(self.filter_buff)
-        quad, tex, buff=self._makeFilterStage(sort=index, size=size_factor, clear_color=clear_color)
+        quad, tex, buff, cam=self._makeFilterStage(sort=index, size=size_factor, clear_color=clear_color)
         self.filter_buff[name]=buff
         self.filter_quad[name]=quad
         self.filter_tex[name]=tex
+        self.filter_cam[name]=cam
 
         quad.setShader(loader.loadShaderGLSL(self.v.format(shader_name), self.f.format(shader_name), define))
         for name, value in inputs.items():
@@ -469,7 +555,7 @@ class DeferredRenderer(DirectObject):
         quad=root.attachNewNode(cm.generate())
         quad.lookAt(0, 0, -1)
         quad.setLightOff()
-        return quad, tex, buff
+        return quad, tex, buff, cam
 
     def _makeForwardStage(self):
         """

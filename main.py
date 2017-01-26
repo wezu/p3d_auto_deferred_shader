@@ -47,7 +47,7 @@ class Demo(DirectObject):
         #... but you can also remove lights by doing 'del self.light_1' or 'self.light_1=None'
         #also use keywords! else you'll never know what SphereLight((0.4,0.4,0.6), (0.9,0.0,2.0), 8.0, 256) is!!!
         self.light_0=SceneLight(color=(0.3, 0.3, 0.1), direction=(-0.5, 0.5, 1.0))
-        self.light_0.addLight(color=(0.0, 0.0, 0.2), direction=(0.0, 0.0, 1.0), name='ambient') #not recomended but working
+        self.light_0.addLight(color=(0.0, 0.0, 0.2), direction=(0.5, -0.5, -1.0), name='ambient') #not recomended but working
         self.light_1=SphereLight(color=(0.4,0.4,0.6), pos=(2,3,2), radius=8.0, shadow_size=0)
         self.light_2=ConeLight(color=(0.8, 0.8, 0.4), pos=(0,0,5), look_at=(10, 0, 0), radius=15.0, fov=30.0, shadow_size=0)
 
@@ -55,12 +55,20 @@ class Demo(DirectObject):
         self.accept('1', self.change_dof, [1.0])
         self.accept('2', self.change_dof, [-1.0])
 
+        self.minimal=False
+
     def do_debug(self):
         #self.light_1.radius=30
         #self.light_2.look_at((5, 1, 0))
-        n=self.light_0.removeLight('ambient')
-        if not n:
-            self.light_0.removeLight('main')
+        #n=self.light_0.removeLight('ambient')
+        #if not n:
+        #    self.light_0.removeLight('main')
+        if self.minimal==True:
+            deferred_renderer.resetFilters(deferred_renderer.preset['full'])
+            self.minimal=False
+        else:
+            deferred_renderer.resetFilters(deferred_renderer.preset['minimal'])
+            self.minimal=True
 
     def change_dof(self, value):
         deferred_renderer.setFilterInput('fog', 'dof_far', value, operator.add)
