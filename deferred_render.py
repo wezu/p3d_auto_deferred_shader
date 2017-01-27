@@ -38,6 +38,9 @@ class DeferredRenderer(DirectObject):
         # size changed
         self.last_window_size = (base.win.getXSize(), base.win.getYSize())
 
+        self.modelMask = scene_mask
+        self.lightMask = light_mask
+
         # install a wrapped version of the loader in the builtins
         builtins.loader = WrappedLoader(builtins.loader)
         loader.texture_shader_inputs = [{'input_name': 'tex_diffuse',
@@ -323,23 +326,7 @@ class DeferredRenderer(DirectObject):
         """
         if stage_name in self.filter_quad:
             id = self._get_filter_stage_index(stage_name)
-            value = self.filter_quad[stage_name].getShaderInput(str(name))
-            return value
-            '''
-            value_type=value.getValueType()
-            print(name, value_type)
-
-            if value_type==ShaderInput.M_texture:
-                return value.getTexture()
-            elif value_type==ShaderInput.M_nodepath:
-                return value.getNodepath()
-            elif value_type==ShaderInput.M_vector:
-                return value.getVector()
-            elif value_type==ShaderInput.M_texture_sampler :
-                return value.getSampler()
-            elif value_type==ShaderInput.M_numeric:
-                return self.filter_quad[stage_name].getShaderInput(str(name))
-            '''
+            return self.filter_quad[stage_name].getShaderInput(str(name))
         return None
 
     def set_filter_input(self, stage_name, name, value, modify_using=None):
@@ -404,8 +391,8 @@ class DeferredRenderer(DirectObject):
         # model buffer, one to render the lights into the light buffer, and
         # one to render "plain" stuff (non-deferred shaded) stuff into the
         # light buffer.  Each camera has a bitmask to identify it.
-        self.modelMask = 1
-        self.lightMask = 2
+        # self.modelMask = 1
+        # self.lightMask = 2
 
         self.modelcam = base.makeCamera(win=self.modelbuffer,
                                         lens=lens,
@@ -512,6 +499,7 @@ class DeferredRenderer(DirectObject):
         the created buffer is put in self.filter_buff[name]
         the created fullscreen quad is put in self.filter_quad[name]
         the created fullscreen texture is put in self.filter_tex[name]
+        the created camera is put in self.filter_cam[name]
         """
         if name is None:
             name = shader_name
@@ -925,8 +913,11 @@ class WrappedLoader(object):
         shader = Shader.make(Shader.SL_GLSL, v_shader_txt, f_shader_txt)
         # store it
         self.shader_cache[(v_shader, f_shader, str(define))] = shader
-        shader.set_filename(Shader.ST_vertex, v_shader)
-        shader.set_filename(Shader.ST_fragment, f_shader)
+        try:
+            shader.set_filename(Shader.ST_vertex, v_shader)
+            shader.set_filename(Shader.ST_fragment, f_shader)
+        except:
+            print('Shader filenames will not be available, consider using a dev version of Panda3D')
         return shader
 
     def loadShader(self, shaderPath, okMissing=False):
@@ -1035,9 +1026,16 @@ class SceneLight(object):
         """
         if name is None:
             name = self.main_light_name
-        deferred_renderer.set_directional_light(
-            color, self.__direction[name], self.__shadow_size[name])
         self.__color[name] = color
+        if len(self.__color) == 1:
+            deferred_renderer.set_directional_light(
+                color, self.__direction[name], self.__shadow_size[name])
+        else:
+            colors = PTALVecBase3f()
+            for v in self.__color.values():
+                colors.pushBack(v)
+            deferred_renderer.set_filter_input(
+                    'final_light', 'light_color', colors)
 
     def set_direction(self, direction, name=None):
         """
@@ -1045,9 +1043,16 @@ class SceneLight(object):
         """
         if name is None:
             name = self.main_light_name
-        deferred_renderer.set_directional_light(
-            self.__color[name], direction, self.__shadow_size[name])
         self.__direction[name] = direction
+        if len(self.__color) == 1:
+            deferred_renderer.set_directional_light(
+                self.__color[name], direction, self.__shadow_size[name])
+        else:
+            directions = PTALVecBase3f()
+            for v in self.__direction.values():
+                directions.pushBack(v)
+            deferred_renderer.set_filter_input(
+                    'final_light', 'direction', directions)
 
     def remove(self):
         deferred_renderer.set_filter_define('final_light', 'NUM_LIGHTS', None)
