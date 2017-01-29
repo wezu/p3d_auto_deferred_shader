@@ -92,16 +92,15 @@ void main()
 
     //shadows
     vec4 world_pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
-    world_pos.xyz /= world_pos.w;
-    world_pos.xyz-=light_pos.xyz;
     vec4 shadow_uv=trans_render_to_shadowcaster*world_pos;
+    shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w;
     float ldist = max(abs(shadow_uv.x), max(abs(shadow_uv.y), abs(shadow_uv.z)));
     ldist = ((light_radius+near)/(light_radius-near))+((-2.0*light_radius*near)/(ldist * (light_radius-near)));
     float shadow= float(texture(shadowcaster.shadowMap, shadow_uv.xyz).r >= (ldist * 0.5 + 0.5)+bias);
     //float shadow= texture(shadowcaster.shadowMap, shadow_uv.xyz).r;
     final*=shadow;
 
-    //final.rgb+=albedo*glow;
+    //final=shadow_uv;
 
     gl_FragData[0]=final;
     //gl_FragData[0]=vec4(shadow, shadow, shadow, 1.0);

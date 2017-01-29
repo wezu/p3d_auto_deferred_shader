@@ -8,18 +8,16 @@ struct p3d_LightSourceParameters
     float spotExponent;
     float spotCutoff;
     float spotCosCutoff;
+    //sampler2D shadowMap;
     };
 uniform p3d_LightSourceParameters spot;
 uniform mat4 p3d_ProjectionMatrixInverse;
-uniform mat4 p3d_ViewProjectionMatrixInverse;
-uniform mat4 p3d_ViewMatrix;
-uniform mat4 p3d_ModelViewMatrix;
-uniform mat4  trans_render_to_clip_of_spot;
 uniform sampler2D albedo_tex;
 uniform sampler2D normal_tex;
 uniform sampler2D depth_tex;
 
-//uniform mat4 trans_render_to_shadowcaster;
+//uniform mat4 trans_render_to_clip_of_spot;
+//uniform mat4 p3d_ViewProjectionMatrixInverse;
 
 //uniform vec2 win_size;
 uniform float light_radius;
@@ -59,6 +57,26 @@ vec3 unpack_normal_octahedron(vec2 packed_nrm)
     return normalize(v);
     }
 
+vec4 blur_tex(sampler2D tex, vec2 uv, float blur)
+    {
+    vec4 out_tex= texture(tex, uv);
+    out_tex += texture(tex, uv+vec2(-0.326212,-0.405805)*blur);
+    out_tex += texture(tex, uv+ vec2(-0.840144, -0.073580)*blur);
+    out_tex += texture(tex, uv+vec2(-0.695914,0.457137)*blur);
+    out_tex += texture(tex, uv+vec2(-0.203345,0.620716)*blur);
+    out_tex += texture(tex, uv+vec2(0.962340,-0.194983)*blur);
+    out_tex += texture(tex, uv+vec2(0.473434,-0.480026)*blur);
+    out_tex += texture(tex, uv+vec2(0.519456,0.767022)*blur);
+    out_tex += texture(tex, uv+vec2(0.185461,-0.893124)*blur);
+    out_tex += texture(tex, uv+vec2(0.507431,0.064425)*blur);
+    out_tex += texture(tex, uv+vec2(0.896420,0.412458)*blur);
+    out_tex += texture(tex, uv+vec2(-0.321940,-0.932615)*blur);
+    out_tex += texture(tex, uv+vec2(-0.791559,-0.597705)*blur);
+    out_tex/=13.0;
+    return out_tex;
+    }
+
+
 void main()
     {
     vec3 color=vec3(0.0, 0.0, 0.0);
@@ -96,6 +114,13 @@ void main()
     float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss*attenuation;
 
     vec4 final=vec4((color*albedo)+spot.color.rgb*spec, spec+gloss);
+
+    //shadows
+    //vec4 pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
+   // vec4 shadow_uv=trans_render_to_clip_of_spot*pos;
+    //shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w*0.5+0.5;
+    //float shadow= float(texture(spot.shadowMap, shadow_uv.xy).r >= shadow_uv.z+bias);
+    //final*=shadow;
 
     gl_FragData[0]=final;
     }

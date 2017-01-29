@@ -8,27 +8,23 @@ struct p3d_LightSourceParameters
     float spotExponent;
     float spotCutoff;
     float spotCosCutoff;
-    sampler2DShadow shadowMap;
-    mat4 shadowMatrix;
+    sampler2D shadowMap;
     };
 uniform p3d_LightSourceParameters spot;
 uniform mat4 p3d_ProjectionMatrixInverse;
-uniform mat4 p3d_ViewProjectionMatrixInverse;
-uniform mat4 p3d_ViewMatrix;
-uniform mat4 p3d_ModelViewMatrix;
-uniform mat4  trans_render_to_clip_of_spot;
 uniform sampler2D albedo_tex;
 uniform sampler2D normal_tex;
 uniform sampler2D depth_tex;
 
-//uniform mat4 trans_render_to_shadowcaster;
+uniform mat4 trans_render_to_clip_of_spot;
+uniform mat4 p3d_ViewProjectionMatrixInverse;
 
 //uniform vec2 win_size;
 uniform float light_radius;
 uniform float light_fov;
 uniform vec4 light_pos;
 //uniform float near;
-//uniform float bias;
+uniform float bias;
 
 in vec3 N;
 in vec3 V;
@@ -100,18 +96,10 @@ void main()
     vec4 final=vec4((color*albedo)+spot.color.rgb*spec, spec+gloss);
 
     //shadows
-    //the fragment world pos reconstructed from depth:
-    vec4 world_pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
-    world_pos.xyz /= world_pos.w;
-    world_pos.xyz-=light_pos.xyz;//move the pos to the position of the light source???
-    vec4 shadow_uv=trans_render_to_clip_of_spot*world_pos;//transform the post to the clip space of the light
-    //do voodoo???
-    shadow_uv.xy*=0.5; //idk?
-    shadow_uv.xy+=2.0; //huh?
-    //...missing step???
-    //shadow lookup
-    float shadow= textureProj(spot.shadowMap, shadow_uv, 0.01);
-
+    vec4 pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
+    vec4 shadow_uv=trans_render_to_clip_of_spot*pos;
+    shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w*0.5+0.5;
+    float shadow= float(texture(spot.shadowMap, shadow_uv.xy).r >= shadow_uv.z+bias);
     final*=shadow;
 
     gl_FragData[0]=final;

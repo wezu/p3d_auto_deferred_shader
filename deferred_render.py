@@ -635,10 +635,13 @@ class DeferredRenderer(DirectObject):
         p3d_light.setHpr(render, hpr)
         p3d_light.node().setExponent(20)
         if shadow_size > 0.0:
-            p3d_light.node().set_shadow_caster(True, 256, 256)
+            p3d_light.node().set_shadow_caster(True, shadow_size, shadow_size)
+            model.setShaderInput("bias", 0.001)
+            model.setShader(loader.loadShaderGLSL(self.v.format(
+            'spot_light_shadow'), self.f.format('spot_light_shadow'), self.shading_setup))
         # p3d_light.node().setCameraMask(self.modelMask)
         model.setShaderInput("spot", p3d_light)
-        # p3d_light.node().showFrustum()
+        #p3d_light.node().showFrustum()
         p3d_light.node().getLens().set_fov(fov)
         p3d_light.node().getLens().setFar(radius)
         p3d_light.node().getLens().setNear(1.0)
