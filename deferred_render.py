@@ -55,8 +55,8 @@ class DeferredRenderer(DirectObject):
                                          'default_texture': loader.loadTexture('data/def_shga.png')}]
 
         self.shading_preset = {'full': {},
-                               'medium': {'DISABLE_POM': 1},
-                               'minimal': {'DISABLE_POM': 1, 'DISABLE_SHADOWS': 1, 'DISABLE_NORMALMAP': 1}
+                               'medium': {'DISABLE_POM': 1, 'DISABLE_SOFTSHADOW':1},
+                               'minimal': {'DISABLE_POM': 1, 'DISABLE_SOFTSHADOW':1, 'DISABLE_NORMALMAP': 1}
                                }
         # set up the deferred rendering buffers
         if shading_setup:

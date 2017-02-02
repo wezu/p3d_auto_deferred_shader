@@ -110,8 +110,12 @@ void main()
     shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w;
     float ldist = max(abs(shadow_uv.x), max(abs(shadow_uv.y), abs(shadow_uv.z)));
     ldist = ((light_radius+near)/(light_radius-near))+((-2.0*light_radius*near)/(ldist * (light_radius-near)));
-    //float shadow= float(texture(shadowcaster.shadowMap, shadow_uv.xyz).r >= (ldist * 0.5 + 0.5)+bias);
+    #ifdef DISABLE_SOFTSHADOW
+    float shadow= float(texture(shadowcaster.shadowMap, shadow_uv.xyz).r >= (ldist * 0.5 + 0.5)+bias);
+    #endif
+    #ifndef DISABLE_SOFTSHADOW
     float shadow=soft_shadow_cube( shadowcaster.shadowMap,  shadow_uv.xyz,  ldist,  bias,  50.0*(1.0-attenuation));
+    #endif
     final*=shadow;
 
     //final=shadow_uv;

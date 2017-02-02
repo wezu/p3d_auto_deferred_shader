@@ -116,9 +116,12 @@ void main()
     vec4 pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
     vec4 shadow_uv=trans_render_to_clip_of_spot*pos;
     shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w*0.5+0.5;
-    //float shadow= float(texture(spot.shadowMap, shadow_uv.xy).r >= shadow_uv.z+bias);
-
+    #ifdef DISABLE_SOFTSHADOW
+    float shadow= float(texture(spot.shadowMap, shadow_uv.xy).r >= shadow_uv.z+bias);
+    #endif
+    #ifndef DISABLE_SOFTSHADOW
     float shadow= soft_shadow(spot.shadowMap, shadow_uv.xy+vec2(0.0, 0.05), shadow_uv.z, bias, 0.03*attenuation);
+    #endif
     final*=shadow;
 
     gl_FragData[0]=final;
