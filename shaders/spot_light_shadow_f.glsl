@@ -57,6 +57,24 @@ vec3 unpack_normal_octahedron(vec2 packed_nrm)
     return normalize(v);
     }
 
+float soft_shadow(sampler2D tex, vec2 uv, float z, float bias, float blur)
+    {
+    //float result = float(texture(tex, uv.xy).r >= z+bias);
+    float result = float(texture(tex, uv + vec2( -0.326212, -0.405805)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(-0.840144, -0.073580)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(-0.695914, 0.457137)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(-0.203345, 0.620716)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(0.962340, -0.194983)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(0.473434, -0.480026)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(0.519456, 0.767022)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(0.185461, -0.893124)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(0.507431, 0.064425)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(0.896420, 0.412458)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(-0.321940, -0.932615)*blur).r >= z+bias);
+    result += float(texture(tex, uv + vec2(-0.791559, -0.597705)*blur).r >= z+bias);
+    return result/12.0;
+    }
+
 void main()
     {
     vec3 color=vec3(0.0, 0.0, 0.0);
@@ -84,7 +102,7 @@ void main()
     float spotEffect = dot(normalize(spot.spotDirection), -light_vec);
     float falloff=0.0;
     if (spotEffect > spot.spotCosCutoff)
-      falloff = pow(spotEffect, 25.0);
+      falloff = pow(spotEffect,80.0);
     attenuation*=falloff;
 
     color+=spot.color.rgb*max(dot(normal.xyz,light_vec), 0.0)*attenuation;
@@ -99,7 +117,10 @@ void main()
     vec4 pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
     vec4 shadow_uv=trans_render_to_clip_of_spot*pos;
     shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w*0.5+0.5;
-    float shadow= float(texture(spot.shadowMap, shadow_uv.xy).r >= shadow_uv.z+bias);
+    //float shadow= float(texture(spot.shadowMap, shadow_uv.xy).r >= shadow_uv.z+bias);
+
+    float shadow= soft_shadow(spot.shadowMap, shadow_uv.xy, shadow_uv.z, bias, 0.02);
+
     final*=shadow;
 
     gl_FragData[0]=final;

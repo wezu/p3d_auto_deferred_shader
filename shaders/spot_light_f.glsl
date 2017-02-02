@@ -104,7 +104,7 @@ void main()
     float spotEffect = dot(normalize(spot.spotDirection), -light_vec);
     float falloff=0.0;
     if (spotEffect > spot.spotCosCutoff)
-      falloff = pow(spotEffect, 25.0);
+      falloff = pow(spotEffect, 80.0);
     attenuation*=falloff;
 
     color+=spot.color.rgb*max(dot(normal.xyz,light_vec), 0.0)*attenuation;

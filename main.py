@@ -50,10 +50,10 @@ class Demo(DirectObject):
         #lights will vanish once out of scope, so keep a reference!
         #... but you can also remove lights by doing 'del self.light_1' or 'self.light_1=None'
         #also use keywords! else you'll never know what SphereLight((0.4,0.4,0.6), (0.9,0.0,2.0), 8.0, 256) is!!!
-        self.light_0 = SceneLight(color=(0.01, 0.01, 0.005), direction=(-0.5, 0.5, 1.0))
+        self.light_0 = SceneLight(color=(0.05, 0.05, 0.1), direction=(-0.5, 0.5, 1.0))
         #self.light_0.add_light(color=(0.0, 0.0, 0.2), direction=(0.5, -0.5, -1.0), name='ambient') #not recomended but working
         self.light_1 = SphereLight(color=(0.4,0.4,0.6), pos=(2,3,2), radius=8.0, shadow_size=256)
-        self.light_2 = ConeLight(color=(0.8, 0.8, 0.4), pos=(0,0,5), look_at=(10, 0, 0), radius=15.0, fov=30.0, shadow_size=256)
+        self.light_2 = ConeLight(color=(0.9, 0.9, 0.3), pos=(0,0,5), look_at=(12, 0, 0), radius=16.0, fov=30.0, shadow_size=512)
 
         self.accept('space', self.do_debug)
         self.accept('1', self.change_shadow_bias, [0.001])
