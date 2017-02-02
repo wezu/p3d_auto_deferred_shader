@@ -59,7 +59,6 @@ vec3 unpack_normal_octahedron(vec2 packed_nrm)
 
 float soft_shadow(sampler2D tex, vec2 uv, float z, float bias, float blur)
     {
-    //float result = float(texture(tex, uv.xy).r >= z+bias);
     float result = float(texture(tex, uv + vec2( -0.326212, -0.405805)*blur).r >= z+bias);
     result += float(texture(tex, uv + vec2(-0.840144, -0.073580)*blur).r >= z+bias);
     result += float(texture(tex, uv + vec2(-0.695914, 0.457137)*blur).r >= z+bias);
@@ -119,8 +118,7 @@ void main()
     shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w*0.5+0.5;
     //float shadow= float(texture(spot.shadowMap, shadow_uv.xy).r >= shadow_uv.z+bias);
 
-    float shadow= soft_shadow(spot.shadowMap, shadow_uv.xy, shadow_uv.z, bias, 0.02);
-
+    float shadow= soft_shadow(spot.shadowMap, shadow_uv.xy+vec2(0.0, 0.05), shadow_uv.z, bias, 0.03*attenuation);
     final*=shadow;
 
     gl_FragData[0]=final;

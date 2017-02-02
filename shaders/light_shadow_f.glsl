@@ -54,6 +54,20 @@ vec3 unpack_normal_octahedron(vec2 packed_nrm)
     return normalize(v);
     }
 
+float soft_shadow_cube(samplerCube tex, vec3 uvw, float z, float bias, float blur)
+    {
+    float pixel=blur/textureSize(tex, 0).x;
+    //float result=float(texture(tex, uvw).r >= (z * 0.5 + 0.5)+bias);
+    float result =float(texture(tex,uvw+vec3(1,0,0)*pixel).r >= (z * 0.5 + 0.5)+bias);
+    result +=float(texture(tex,uvw+vec3(-1,0,0)*pixel).r >= (z * 0.5 + 0.5)+bias);
+    result +=float(texture(tex,uvw+vec3(0,1,0)*pixel).r >= (z * 0.5 + 0.5)+bias);
+    result +=float(texture(tex,uvw+vec3(0,-1,0)*pixel).r >= (z * 0.5 + 0.5)+bias);
+    result +=float(texture(tex,uvw+vec3(0,0,1)*pixel).r >= (z * 0.5 + 0.5)+bias);
+    result +=float(texture(tex,uvw+vec3(0,0,-1)*pixel).r >= (z * 0.5 + 0.5)+bias);
+    return result/6.0;
+    }
+
+
 void main()
     {
     vec3 color=vec3(0.0, 0.0, 0.0);
@@ -96,8 +110,8 @@ void main()
     shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w;
     float ldist = max(abs(shadow_uv.x), max(abs(shadow_uv.y), abs(shadow_uv.z)));
     ldist = ((light_radius+near)/(light_radius-near))+((-2.0*light_radius*near)/(ldist * (light_radius-near)));
-    float shadow= float(texture(shadowcaster.shadowMap, shadow_uv.xyz).r >= (ldist * 0.5 + 0.5)+bias);
-    //float shadow= texture(shadowcaster.shadowMap, shadow_uv.xyz).r;
+    //float shadow= float(texture(shadowcaster.shadowMap, shadow_uv.xyz).r >= (ldist * 0.5 + 0.5)+bias);
+    float shadow=soft_shadow_cube( shadowcaster.shadowMap,  shadow_uv.xyz,  ldist,  bias,  50.0*(1.0-attenuation));
     final*=shadow;
 
     //final=shadow_uv;
