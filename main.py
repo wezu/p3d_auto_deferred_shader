@@ -23,29 +23,33 @@ import operator
 class Demo(DirectObject):
     def __init__(self):
         base = ShowBase.ShowBase()
+
+        base.trackball.node().setHpr(0, 40, 0)
+        base.trackball.node().setPos(0, 20, 0)
+
         DeferredRenderer(preset='full')
 
         column=loader.loadModel("models/column")
-        column.reparentTo(defered_render)
-        column2=column.copyTo(defered_render)
+        column.reparentTo(deferred_render)
+        column2=column.copyTo(deferred_render)
         column2.set_pos(10.0, 0, 0)
-        column3=column.copyTo(defered_render)
+        column3=column.copyTo(deferred_render)
         column3.set_pos(20.0, 0, 0)
-        column4=column.copyTo(defered_render)
+        column4=column.copyTo(deferred_render)
         column4.set_pos(30.0, 0, 0)
-        column5=column.copyTo(defered_render)
+        column5=column.copyTo(deferred_render)
         column5.set_pos(40.0, 0, 0)
-        column6=column.copyTo(defered_render)
+        column6=column.copyTo(deferred_render)
         column6.set_pos(50.0, 0, 0)
         box=loader.loadModel("models/box2")
         box.set_pos(2,2,0)
         box.setH(45)
-        box.reparentTo(defered_render)
+        box.reparentTo(deferred_render)
 
         frowney=loader.loadModel('frowney')
         frowney.set_pos(-2, -1, 1)
         frowney.setH(90)
-        frowney.reparentTo(defered_render)
+        frowney.reparentTo(deferred_render)
 
         #lights will vanish once out of scope, so keep a reference!
         #... but you can also remove lights by doing 'del self.light_1' or 'self.light_1=None'
