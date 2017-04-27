@@ -22,8 +22,8 @@ void main()
     {
     gl_Position = p3d_ModelViewProjectionMatrix * p3d_Vertex;
     vec4 world_pos = p3d_ModelMatrix * p3d_Vertex;
-    T=p3d_NormalMatrix * p3d_Tangent;
-    B=p3d_NormalMatrix * p3d_Binormal;
+    T=mat3(p3d_ModelViewMatrix) * p3d_Tangent;
+    B=mat3(p3d_ModelViewMatrix) * p3d_Binormal;
     N=p3d_NormalMatrix * p3d_Normal;
     mat3 TBN = transpose(mat3(T,B,N));
     vec4 V=p3d_ModelViewMatrix * p3d_Vertex;

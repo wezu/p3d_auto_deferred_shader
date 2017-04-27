@@ -17,7 +17,7 @@ uniform sampler2D depth_tex;
 uniform mat4 trans_render_to_shadowcaster;
 
 uniform vec4 light;
-uniform vec4 light_pos;
+//uniform vec4 light_pos;
 //uniform vec2 win_size;
 
 uniform float near;
@@ -100,9 +100,9 @@ void main()
     //spec
     vec3 view_vec = normalize(-view_pos.xyz);
     vec3 reflect_vec=normalize(reflect(light_vec,normal.xyz));
-    float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*attenuation*gloss;
+    float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0+2000.0*gloss)*attenuation*gloss*10.0;
 
-    vec4 final=vec4((color*albedo)+light_color*spec, spec+gloss);
+    vec4 final=vec4((color*albedo)+light_color*spec, gloss+spec);
 
     //shadows
     vec4 world_pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
@@ -114,7 +114,7 @@ void main()
     float shadow= float(texture(shadowcaster.shadowMap, shadow_uv.xyz).r >= (ldist * 0.5 + 0.5)+bias);
     #endif
     #ifndef DISABLE_SOFTSHADOW
-    float shadow=soft_shadow_cube( shadowcaster.shadowMap,  shadow_uv.xyz,  ldist,  bias,  50.0*(1.0-attenuation));
+    float shadow=soft_shadow_cube( shadowcaster.shadowMap,  shadow_uv.xyz,  ldist,  bias,  150.0*(1.0-attenuation));
     #endif
     final*=shadow;
 

@@ -8,7 +8,7 @@ in vec3 TS_V;
 //in vec4 V;
 
 uniform sampler2D tex_diffuse; //rgba color texture
-#ifdef DISABLE_NORMALMAP
+#ifndef DISABLE_NORMALMAP
 uniform sampler2D tex_normal; //rgba normal+gloss texture
 #endif
 uniform sampler2D tex_shga; //Shine Height Gloss Alpha
@@ -50,7 +50,7 @@ vec2 occlusionPallaxMapping(vec3 v, vec2 t)
 {
     int     nMaxSamples         = 30;
     int     nMinSamples         = 10;
-    float   fHeightMapScale     = 0.01;
+    float   fHeightMapScale     = 0.006;
     int nNumSamples = int(mix(nMaxSamples, nMinSamples, abs(dot(vec3(0.0,0.0,1.0), v))));
     // height of each layer
     float fStepSize = 1.0 / float(nNumSamples);
@@ -130,7 +130,7 @@ void main()
         discard;
 
     vec4 color_map=texture(tex_diffuse,final_uv);
-    #ifdef DISABLE_NORMALMAP
+    #ifndef DISABLE_NORMALMAP
     vec4 normal_map=texture(tex_normal,final_uv);
     //rescale normal
     vec3 normal=normal_map.xyz*2.0-1.0;

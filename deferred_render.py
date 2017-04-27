@@ -1,6 +1,7 @@
 from __future__ import print_function
 import sys
 import math
+#from functools import lru_cache
 from direct.showbase.DirectObject import DirectObject
 from panda3d.core import *
 if sys.version_info >= (3, 0):
@@ -13,7 +14,7 @@ else:
 __author__ = "wezu"
 __copyright__ = "Copyright 2017"
 __license__ = "ISC"
-__version__ = "0.1"
+__version__ = "0.11"
 __email__ = "wezu.dev@gmail.com"
 __all__ = ['SphereLight', 'ConeLight', 'SceneLight', 'DeferredRenderer']
 
@@ -25,7 +26,7 @@ class DeferredRenderer(DirectObject):
     it also creates a deferred_render and forward_render nodes.
     """
 
-    def __init__(self, preset='medium', filter_setup=None, shading_setup=None, scene_mask=1, light_mask=2):
+    def __init__(self, preset='medium', filter_setup=None, shading_setup=None, shadows=None, scene_mask=1, light_mask=2):
         # check if there are other DeferredRenderer in buildins
         if hasattr(builtins, 'deferred_renderer'):
             raise RuntimeError('There can only be one DeferredRenderer')
@@ -37,7 +38,9 @@ class DeferredRenderer(DirectObject):
         self.v = 'shaders/{}_v.glsl'
         # last known window size, needed to test on window events if the window
         # size changed
-        self.last_window_size = (base.win.getXSize(), base.win.getYSize())
+        self.last_window_size = (base.win.get_x_size(), base.win.get_y_size())
+
+        self.shadow_size=shadows
 
         self.modelMask = scene_mask
         self.lightMask = light_mask
@@ -46,14 +49,14 @@ class DeferredRenderer(DirectObject):
         builtins.loader = WrappedLoader(builtins.loader)
         loader.texture_shader_inputs = [{'input_name': 'tex_diffuse',
                                          'stage_modes': (TextureStage.M_modulate, TextureStage.M_modulate_glow, TextureStage.M_modulate_gloss),
-                                         'default_texture': loader.loadTexture('tex/def_diffuse.png')},
+                                         'default_texture': loader.load_texture('tex/def_diffuse.png')},
                                         {'input_name': 'tex_normal',
                                          'stage_modes': (TextureStage.M_normal, TextureStage.M_normal_height, TextureStage.M_normal_gloss),
-                                         'default_texture': loader.loadTexture('tex/def_normal.png')},
+                                         'default_texture': loader.load_texture('tex/def_normal.png')},
                                         {'input_name': 'tex_shga',  # Shine Height Alpha Glow
                                          # something different
                                          'stage_modes': (TextureStage.M_selector,),
-                                         'default_texture': loader.loadTexture('tex/def_shga.png')}]
+                                         'default_texture': loader.load_texture('tex/def_shga.png')}]
 
         self.shading_preset = {'custom':{},
                                'full': {},
@@ -61,14 +64,14 @@ class DeferredRenderer(DirectObject):
                                'minimal': {'DISABLE_POM': 1, 'DISABLE_SOFTSHADOW':1, 'DISABLE_NORMALMAP': 1}
                                }
         # set up the deferred rendering buffers
-        if shading_setup:
+        if shading_setup is not None:
             self.shading_setup = shading_setup
         else:
             self.shading_setup = self.shading_preset[preset]
 
         self._setup_g_buffer(self.shading_setup)
 
-        self.preset = {'custom': [{'shader_name': 'ao',
+        self.preset = {'custom': [{'shader': 'ao',
                                  'inputs': {'random_tex': 'tex/random.png',
                                             'random_size': 64.0,
                                             'sample_rad': 0.4,
@@ -76,26 +79,27 @@ class DeferredRenderer(DirectObject):
                                             'scale': 0.9,
                                             'bias': 0.4,
                                             'fade_distance': 80.0}},
-                                {'name': 'final_light', 'shader_name': 'dir_light',
+                                {'name': 'final_light', 'shader': 'dir_light',
                                  'define': {'HALFLAMBERT': 2.0},
                                  'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
-                                {'shader_name': 'bloom',
-                                 'size_factor': 0.5,
+                                {'shader': 'bloom',
+                                 'size': 0.5,
                                  'inputs': {'glow_power': 2.0}},
-                                {'name': 'bloom_blur', 'shader_name': 'blur',
+                                {'name': 'bloom_blur', 'shader': 'blur',
+                                'translate_tex_name' :{ 'bloom': 'input_tex'},
                                  'inputs': {'blur': 3.0},
-                                 'size_factor': 0.5},
-                                {'name': 'pre_aa', 'shader_name': 'mix',
+                                 'size': 0.5},
+                                {'name': 'pre_aa', 'shader': 'mix',
                                  'translate_tex_name': {'final_light': 'final_color'},
                                  'define': {'DISABLE_SSR': 1},
                                  'inputs': {'lut_tex': 'tex/lut_v1.png',
                                             'noise_tex': 'tex/noise.png'}},
-                                {'shader_name': 'fxaa',
-                                 'inputs': {'FXAA_SPAN_MAX': 2.0,
-                                            'FXAA_REDUCE_MUL': float(1.0 / 16.0),
-                                            'FXAA_SUBPIX_SHIFT': float(1.0 / 8.0)}}
+                                {'shader': 'fxaa',
+                                 'inputs': {'span_max': 2.0,
+                                            'reduce_mul': float(1.0 / 16.0),
+                                            'subpix_shift': float(1.0 / 8.0)}}
                                 ],
-                      'full': [{'shader_name': 'ao',
+                      'full': [{'shader': 'ao',
                                  'inputs': {'random_tex': 'tex/random.png',
                                             'random_size': 64.0,
                                             'sample_rad': 0.4,
@@ -103,37 +107,38 @@ class DeferredRenderer(DirectObject):
                                             'scale': 0.9,
                                             'bias': 0.4,
                                             'fade_distance': 80.0}},
-                                {'name': 'final_light', 'shader_name': 'dir_light',
+                                {'name': 'final_light', 'shader': 'dir_light',
                                  'define': {'HALFLAMBERT': 2.0},
                                  'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
-                                {'shader_name': 'fog',
+                                {'shader': 'fog',
                                  'inputs': {'fog_color': Vec4(0.0, 0.0, 0.0, 0.0),
                                             # start, stop, power, mix
-                                            'fog_config': Vec4(25.0, 100.0, 2.0, 1.0),
-                                            'dof_near': 0.3,  # 0.0..1.0 not distance!
-                                            'dof_far': 60.0}},  # distance in units to full blur
-                                {'shader_name': 'ssr', 'inputs': {}},
-                                {'shader_name': 'bloom',
-                                 'size_factor': 0.5,
+                                            'fog_config': Vec4(25.0, 60.0, 2.0, 1.0),
+                                            'dof_near': 3.0,  # 0.0..1.0 not distance!
+                                            'dof_far': 55.0}},  # distance in units to full blur
+                                {'shader': 'ssr', 'inputs': {}},
+                                {'shader': 'bloom',
+                                 'size': 0.5,
                                  'inputs': {'glow_power': 2.0}},
-                                {'name': 'bloom_blur', 'shader_name': 'blur',
-                                 'inputs': {'blur': 3.0},
-                                 'size_factor': 0.5},
-                                {'name': 'compose', 'shader_name': 'mix',
+                                {'name': 'bloom_blur', 'shader': 'blur',
+                                 'translate_tex_name' :{ 'bloom': 'input_tex'},
+                                 'inputs': {'blur': 4.0},
+                                 'size': 0.5},
+                                {'name': 'compose', 'shader': 'mix',
                                  'translate_tex_name': {'fog': 'final_color'},
                                  'inputs': {'lut_tex': 'tex/lut_v1.png',
                                             'noise_tex': 'tex/noise.png'}},
-                                {'name': 'pre_aa', 'shader_name': 'dof',
-                                 'inputs': {'blur': 6.0}},
-                                {'shader_name': 'fxaa',
-                                 'inputs': {'FXAA_SPAN_MAX': 2.0,
-                                            'FXAA_REDUCE_MUL': float(1.0 / 16.0),
-                                            'FXAA_SUBPIX_SHIFT': float(1.0 / 8.0)}}
+                                {'name': 'pre_aa', 'shader': 'dof',
+                                 'inputs': {'blur': 4.0}},
+                                {'shader': 'fxaa',
+                                 'inputs': {'span_max': 2.0,
+                                            'reduce_mul': float(1.0 / 16.0),
+                                            'subpix_shift': float(1.0 / 8.0)}}
                                 ],
-                       'minimal': [{'name': 'final_light', 'shader_name': 'dir_light',
+                       'minimal': [{'name': 'final_light', 'shader': 'dir_light',
                                     'define': {'HALFLAMBERT': 2.0},
                                     'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
-                                   {'name': 'compose', 'shader_name': 'mix',
+                                   {'name': 'compose', 'shader': 'mix',
                                     'translate_tex_name': {'final_light': 'final_color'},
                                     'define': {'DISABLE_SSR': 1,
                                                'DISABLE_AO': 1,
@@ -142,13 +147,13 @@ class DeferredRenderer(DirectObject):
                                                'DISABLE_DITHERING': 1},
                                     'inputs': {'lut_tex': 'tex/lut_v1.png',
                                                'noise_tex': 'tex/noise.png'}},
-                                   {'shader_name': 'fxaa',
+                                   {'shader': 'fxaa',
                                     'translate_tex_name': {'compose': 'pre_aa'},
-                                    'inputs': {'FXAA_SPAN_MAX': 2.0,
-                                               'FXAA_REDUCE_MUL': float(1.0 / 16.0),
-                                               'FXAA_SUBPIX_SHIFT': float(1.0 / 8.0)}}
+                                    'inputs': {'span_max': 2.0,
+                                               'reduce_mul': float(1.0 / 16.0),
+                                               'subpix_shift': float(1.0 / 8.0)}}
                                    ],
-                       'medium': [{'shader_name': 'ao', 'size_factor': 0.5,
+                       'medium': [{'shader': 'ao', 'size': 0.5,
                                    'inputs': {'random_tex': 'tex/random.png',
                                               'random_size': 64.0,
                                               'sample_rad': 0.4,
@@ -156,31 +161,31 @@ class DeferredRenderer(DirectObject):
                                               'scale': 0.9,
                                               'bias': 0.4,
                                               'fade_distance': 80.0}},
-                                  {'name': 'final_light', 'shader_name': 'dir_light',
+                                  {'name': 'final_light', 'shader': 'dir_light',
                                    'define': {'HALFLAMBERT': 2.0},
                                    'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
-                                  {'shader_name': 'fog',
+                                  {'shader': 'fog',
                                    'inputs': {'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
                                               # start, stop, power, mix
                                               'fog_config': Vec4(1.0, 100.0, 2.0, 1.0),
                                               'dof_near': 0.5,  # 0.0..1.0 not distance!
                                               'dof_far': 60.0}},  # distance in units to full blur
-                                  {'shader_name': 'bloom',
-                                   'size_factor': 0.5,
+                                  {'shader': 'bloom',
+                                   'size': 0.5,
                                    'inputs': {'glow_power': 5.0}},
-                                  {'name': 'bloom_blur', 'shader_name': 'blur',
+                                  {'name': 'bloom_blur', 'shader': 'blur',
                                    'inputs': {'blur': 3.0},
-                                   'size_factor': 0.5},
-                                  {'name': 'compose', 'shader_name': 'mix',
+                                   'size': 0.5},
+                                  {'name': 'compose', 'shader': 'mix',
                                    'translate_tex_name': {'fog': 'final_color'},
                                    'define': {'DISABLE_SSR': 1},
                                    'inputs': {'lut_tex': 'tex/lut_v1.png',
                                               'noise_tex': 'tex/noise.png'}},
-                                  {'shader_name': 'fxaa',
+                                  {'shader': 'fxaa',
                                    'translate_tex_name': {'compose': 'pre_aa'},
-                                   'inputs': {'FXAA_SPAN_MAX': 2.0,
-                                              'FXAA_REDUCE_MUL': float(1.0 / 16.0),
-                                              'FXAA_SUBPIX_SHIFT': float(1.0 / 8.0)}}
+                                   'inputs': {'span_max': 2.0,
+                                              'reduce_mul': float(1.0 / 16.0),
+                                              'subpix_shift': float(1.0 / 8.0)}}
                                   ]
                        }
 
@@ -207,25 +212,25 @@ class DeferredRenderer(DirectObject):
             self.common_inputs[name] = tex
         for name, value in self.common_inputs.items():
             for filter_name, quad in self.filter_quad.items():
-                quad.setShaderInput(name, value)
+                quad.set_shader_input(name, value)
 
         # stick the last stage quad to render2d
         # this is a bit ugly...
         if 'name' in self.filter_stages[-1]:
             last_stage = self.filter_stages[-1]['name']
         else:
-            last_stage = self.filter_stages[-1]['shader_name']
-        self.filter_quad[last_stage] = self.lightbuffer.getTextureCard()
+            last_stage = self.filter_stages[-1]['shader']
+        self.filter_quad[last_stage] = self.lightbuffer.get_texture_card()
         self.reload_filter(last_stage)
-        self.filter_quad[last_stage].reparentTo(render2d)
+        self.filter_quad[last_stage].reparent_to(render2d)
 
         # listen to window events so that buffers can be resized with the
         # window
         self.accept("window-event", self._on_window_event)
         # update task
-        taskMgr.add(self._update, '_update_tsk')
+        taskMgr.add(self._update, '_update_tsk', sort=5)
 
-    def reset_filters(self, filter_setup):
+    def reset_filters(self, filter_setup, shading_setup=None):
         """
         Remove all filters and creates a new filter list using the given filter_setup (dict)
         """
@@ -237,22 +242,22 @@ class DeferredRenderer(DirectObject):
 
         # remove buffers
         for buff in self.filter_buff.values():
-            buff.clearRenderTextures()
-            base.win.getGsg().getEngine().removeWindow(buff)
+            buff.clear_render_textures()
+            base.win.get_gsg().get_engine().remove_window(buff)
         # remove quads, but keep the last one (detach it)
-        # the last one should also be self.lightbuffer.getTextureCard()
+        # the last one should also be self.lightbuffer.get_texture_card()
         # so we don't need to keep a reference to it
         if 'name' in self.filter_stages[-1]:
             last_stage = self.filter_stages[-1]['name']
         else:
-            last_stage = self.filter_stages[-1]['shader_name']
+            last_stage = self.filter_stages[-1]['shader']
         for name, quad in self.filter_quad.items():
             if name != last_stage:
-                quad.removeNode()
+                quad.remove_node()
             else:
-                quad.detachNode()
+                quad.detach_node()
         for cam in self.filter_cam.values():
-            cam.removeNode()
+            cam.remove_node()
         # load the new values
         self.filter_buff = {}
         self.filter_quad = {}
@@ -265,16 +270,16 @@ class DeferredRenderer(DirectObject):
             self.common_inputs[name] = tex
         for name, value in self.common_inputs.items():
             for filter_name, quad in self.filter_quad.items():
-                quad.setShaderInput(name, value)
+                quad.set_shader_input(name, value)
         # stick the last stage quad to render2d
         # this is a bit ugly...
         if 'name' in self.filter_stages[-1]:
             last_stage = self.filter_stages[-1]['name']
         else:
-            last_stage = self.filter_stages[-1]['shader_name']
-        self.filter_quad[last_stage] = self.lightbuffer.getTextureCard()
+            last_stage = self.filter_stages[-1]['shader']
+        self.filter_quad[last_stage] = self.lightbuffer.get_texture_card()
         self.reload_filter(last_stage)
-        self.filter_quad[last_stage].reparentTo(render2d)
+        self.filter_quad[last_stage].reparent_to(render2d)
 
         # reapply the directional lights
         self.set_filter_define(
@@ -283,30 +288,39 @@ class DeferredRenderer(DirectObject):
             self.set_filter_input('final_light', None, dir_light_color)
             self.set_filter_input('final_light', None, dir_light_dir)
 
+        if shading_setup != self.shading_setup:
+            self.light_root.set_shader(loader.load_shader_GLSL(
+                self.v.format('light'), self.f.format('light'), shading_setup))
+            self.geometry_root.set_shader(loader.load_shader_GLSL(
+                self.v.format('geometry'), self.f.format('geometry'), shading_setup))
+            self.plain_root.set_shader(loader.load_shader_GLSL(
+                self.v.format('forward'), self.f.format('forward'), shading_setup))
+            self.shading_setup=shading_setup
+
     def reload_filter(self, stage_name):
         """
         Reloads the shader and inputs of a given filter stage
         """
         id = self._get_filter_stage_index(stage_name)
-        shader_name = self.filter_stages[id]['shader_name']
+        shader = self.filter_stages[id]['shader']
         inputs = {}
         if 'inputs' in self.filter_stages[id]:
             inputs = self.filter_stages[id]['inputs']
         define = None
         if 'define' in self.filter_stages[id]:
             define = self.filter_stages[id]['define']
-        self.filter_quad[stage_name].setShader(loader.loadShaderGLSL(
-            self.v.format(shader_name), self.f.format(shader_name), define))
+        self.filter_quad[stage_name].set_shader(loader.load_shader_GLSL(
+            self.v.format(shader), self.f.format(shader), define))
         for name, value in inputs.items():
             if isinstance(value, basestring):
-                value = loader.loadTexture(value)
-            self.filter_quad[stage_name].setShaderInput(str(name), value)
+                value = loader.load_texture(value)
+            self.filter_quad[stage_name].set_shader_input(str(name), value)
         for name, value in self.common_inputs.items():
-            self.filter_quad[stage_name].setShaderInput(name, value)
+            self.filter_quad[stage_name].set_shader_input(name, value)
         if 'translate_tex_name' in self.filter_stages[id]:
             for old_name, new_name in self.filter_stages[id]['translate_tex_name'].items():
                 value = self.filter_tex[old_name]
-                self.filter_quad[stage_name].setShaderInput(
+                self.filter_quad[stage_name].set_shader_input(
                     str(new_name), value)
 
     def get_filter_define(self, stage_name, name):
@@ -346,7 +360,7 @@ class DeferredRenderer(DirectObject):
             if 'name' in stage:
                 if stage['name'] == name:
                     return index
-            elif stage['shader_name'] == name:
+            elif stage['shader'] == name:
                 return index
         raise IndexError('No stage named ' + name)
 
@@ -356,7 +370,7 @@ class DeferredRenderer(DirectObject):
         """
         if stage_name in self.filter_quad:
             id = self._get_filter_stage_index(stage_name)
-            return self.filter_quad[stage_name].getShaderInput(str(name))
+            return self.filter_quad[stage_name].get_shader_input(str(name))
         return None
 
     def set_filter_input(self, stage_name, name, value, modify_using=None):
@@ -368,15 +382,24 @@ class DeferredRenderer(DirectObject):
         if stage_name in self.filter_quad:
             id = self._get_filter_stage_index(stage_name)
             if name is None:
-                self.filter_quad[stage_name].setShaderInput(value)
+                self.filter_quad[stage_name].set_shader_input(value)
                 return
             if modify_using is not None:
                 value = modify_using(self.filter_stages[id][
                                      'inputs'][name], value)
                 self.filter_stages[id]['inputs'][name] = value
             if isinstance(value, basestring):
-                value = loader.loadTexture(value)
-            self.filter_quad[stage_name].setShaderInput(str(name), value)
+                tex = loader.load_texture(value, sRgb='srgb'in value)
+                if 'nearest' in value:
+                    tex.set_magfilter(SamplerState.FT_nearest)
+                    tex.set_minfilter(SamplerState.FT_nearest)
+                if 'f_rgb16' in value:
+                    tex.set_format(Texture.F_rgb16)
+                if 'clamp' in value:
+                    tex.set_wrap_u(Texture.WMClamp)
+                    tex.set_wrap_v(Texture.WMClamp)
+                value=tex
+            self.filter_quad[stage_name].set_shader_input(str(name), value)
             # print(stage_name, name, value)
 
     def _setup_g_buffer(self, define=None):
@@ -389,33 +412,33 @@ class DeferredRenderer(DirectObject):
         # Create four render textures: depth, normal, albedo, and final.
         # attach them to the various bitplanes of the offscreen buffers.
         self.depth = Texture()
-        self.depth.setWrapU(Texture.WM_clamp)
-        self.depth.setWrapV(Texture.WM_clamp)
-        self.depth.setFormat(Texture.F_depth_component32)
-        self.depth.setComponentType(Texture.T_float)
+        self.depth.set_wrap_u(Texture.WM_clamp)
+        self.depth.set_wrap_v(Texture.WM_clamp)
+        self.depth.set_format(Texture.F_depth_component32)
+        self.depth.set_component_type(Texture.T_float)
         self.albedo = Texture()
         self.normal = Texture()
-        self.normal.setFormat(Texture.F_rgba16)
-        self.normal.setComponentType(Texture.T_float)
+        self.normal.set_format(Texture.F_rgba16)
+        self.normal.set_component_type(Texture.T_float)
         self.lit_tex = Texture()
-        self.lit_tex.setWrapU(Texture.WM_clamp)
-        self.lit_tex.setWrapV(Texture.WM_clamp)
+        self.lit_tex.set_wrap_u(Texture.WM_clamp)
+        self.lit_tex.set_wrap_v(Texture.WM_clamp)
 
-        self.modelbuffer.addRenderTexture(tex=self.depth,
+        self.modelbuffer.add_render_texture(tex=self.depth,
                                           mode=GraphicsOutput.RTMBindOrCopy,
                                           bitplane=GraphicsOutput.RTPDepth)
-        self.modelbuffer.addRenderTexture(tex=self.albedo,
+        self.modelbuffer.add_render_texture(tex=self.albedo,
                                           mode=GraphicsOutput.RTMBindOrCopy,
                                           bitplane=GraphicsOutput.RTPColor)
-        self.modelbuffer.addRenderTexture(tex=self.normal,
+        self.modelbuffer.add_render_texture(tex=self.normal,
                                           mode=GraphicsOutput.RTMBindOrCopy,
                                           bitplane=GraphicsOutput.RTPAuxRgba0)
-        self.lightbuffer.addRenderTexture(tex=self.lit_tex,
+        self.lightbuffer.add_render_texture(tex=self.lit_tex,
                                           mode=GraphicsOutput.RTMBindOrCopy,
                                           bitplane=GraphicsOutput.RTPColor)
         # Set the near and far clipping planes.
-        base.cam.node().getLens().setNearFar(1.0, 100.0)
-        lens = base.cam.node().getLens()
+        base.cam.node().get_lens().set_near_far(3.0, 70.0)
+        lens = base.cam.node().get_lens()
 
         # This algorithm uses three cameras: one to render the models into the
         # model buffer, one to render the lights into the light buffer, and
@@ -424,14 +447,14 @@ class DeferredRenderer(DirectObject):
         # self.modelMask = 1
         # self.lightMask = 2
 
-        self.modelcam = base.makeCamera(win=self.modelbuffer,
+        self.modelcam = base.make_camera(win=self.modelbuffer,
                                         lens=lens,
                                         scene=render,
-                                        mask=self.modelMask)
-        self.lightcam = base.makeCamera(win=self.lightbuffer,
+                                        mask=BitMask32.bit(self.modelMask))
+        self.lightcam = base.make_camera(win=self.lightbuffer,
                                         lens=lens,
                                         scene=render,
-                                        mask=self.lightMask)
+                                        mask=BitMask32.bit(self.lightMask))
 
         # Panda's main camera is not used.
         base.cam.node().setActive(0)
@@ -443,56 +466,57 @@ class DeferredRenderer(DirectObject):
         base.win.setSort(3)
 
         # Within the light buffer, control the order of the two cams.
-        self.lightcam.node().getDisplayRegion(0).setSort(1)
+        self.lightcam.node().get_display_region(0).setSort(1)
 
         # By default, panda usually clears the screen before every
         # camera and before every window.  Tell it not to do that.
         # Then, tell it specifically when to clear and what to clear.
-        self.modelcam.node().getDisplayRegion(0).disableClears()
-        self.lightcam.node().getDisplayRegion(0).disableClears()
-        base.cam.node().getDisplayRegion(0).disableClears()
-        base.cam2d.node().getDisplayRegion(0).disableClears()
-        self.modelbuffer.disableClears()
-        base.win.disableClears()
+        self.modelcam.node().get_display_region(0).disable_clears()
+        self.lightcam.node().get_display_region(0).disable_clears()
+        base.cam.node().get_display_region(0).disable_clears()
+        base.cam2d.node().get_display_region(0).disable_clears()
+        self.modelbuffer.disable_clears()
+        base.win.disable_clears()
 
-        self.modelbuffer.setClearColorActive(1)
-        self.modelbuffer.setClearDepthActive(1)
-        self.lightbuffer.setClearColorActive(1)
-        self.lightbuffer.setClearColor((0, 0, 0, 0))
-        self.modelbuffer.setClearColor((0, 0, 0, 0))
-        self.modelbuffer.setClearActive(GraphicsOutput.RTPAuxRgba0, True)
+        self.modelbuffer.set_clear_color_active(1)
+        self.modelbuffer.set_clear_depth_active(1)
+        self.lightbuffer.set_clear_color_active(1)
+        self.lightbuffer.set_clear_color((0, 0, 0, 0))
+        self.modelbuffer.set_clear_color((0, 0, 0, 0))
+        self.modelbuffer.set_clear_active(GraphicsOutput.RTPAuxRgba0, True)
 
-        render.setState(RenderState.makeEmpty())
+        render.set_state(RenderState.make_empty())
 
         # Create two subroots, to help speed cull traversal.
         # root node and a list for the lights
-        self.light_root = render.attachNewNode('light_root')
-        self.light_root.setShader(loader.loadShaderGLSL(
+        self.light_root = render.attach_new_node('light_root')
+        self.light_root.set_shader(loader.load_shader_GLSL(
             self.v.format('light'), self.f.format('light'), define))
-        self.light_root.setShaderInput("albedo_tex", self.albedo)
-        self.light_root.setShaderInput("depth_tex", self.depth)
-        self.light_root.setShaderInput("normal_tex", self.normal)
-        self.light_root.setShaderInput('win_size', Vec2(
-            base.win.getXSize(), base.win.getYSize()))
-        self.light_root.hide(BitMask32(self.modelMask))
-        self.light_root.setShaderInput('camera', base.cam)
-        self.light_root.setShaderInput('render', render)
+        self.light_root.set_shader_input("albedo_tex", self.albedo)
+        self.light_root.set_shader_input("depth_tex", self.depth)
+        self.light_root.set_shader_input("normal_tex", self.normal)
+        self.light_root.set_shader_input('win_size', Vec2(
+            base.win.get_x_size(), base.win.get_y_size()))
+        self.light_root.hide(BitMask32.bit(self.modelMask))
+        self.light_root.set_shader_input('camera', base.cam)
+        self.light_root.set_shader_input('render', render)
         # self.light_root.hide(BitMask32(self.plainMask))
 
-        self.geometry_root = render.attachNewNode('geometry_root')
-        self.geometry_root.setShader(loader.loadShaderGLSL(
+        self.geometry_root = render.attach_new_node('geometry_root')
+        self.geometry_root.set_shader(loader.load_shader_GLSL(
             self.v.format('geometry'), self.f.format('geometry'), define))
-        self.geometry_root.hide(BitMask32(self.lightMask))
+        self.geometry_root.hide(BitMask32.bit(self.lightMask))
         # self.geometry_root.hide(BitMask32(self.plainMask))
 
         self.plain_root, self.plain_tex, self.plain_cam, self.plain_buff = self._make_forward_stage()
-        self.plain_root.setShader(loader.loadShaderGLSL(
+        self.plain_root.set_shader(loader.load_shader_GLSL(
             self.v.format('forward'), self.f.format('forward'), define))
-        self.plain_root.setShaderInput("depth_tex", self.depth)
-        self.plain_root.setShaderInput('win_size', Vec2(
-            base.win.getXSize(), base.win.getYSize()))
-        self.plain_root.hide(BitMask32(self.lightMask))
-        self.plain_root.hide(BitMask32(self.modelMask))
+        self.plain_root.set_shader_input("depth_tex", self.depth)
+        self.plain_root.set_shader_input('win_size', Vec2(
+            base.win.get_x_size(), base.win.get_y_size()))
+        mask=BitMask32.bit(self.modelMask)
+        #mask.set_bit(self.lightMask)
+        self.plain_root.hide(mask)
 
         #set aa
         #render.setAntialias(AntialiasAttrib.M_multisample)
@@ -508,24 +532,24 @@ class DeferredRenderer(DirectObject):
         the new size of the window if the size of the window changed
         """
         if window is not None:
-            window_size = (base.win.getXSize(), base.win.getYSize())
+            window_size = (base.win.get_x_size(), base.win.get_y_size())
             if self.last_window_size != window_size:
-                self.modelbuffer.setSize(window_size[0], window_size[1])
-                self.lightbuffer.setSize(window_size[0], window_size[1])
-                self.plain_buff.setSize(window_size[0], window_size[1])
+                self.modelbuffer.set_size(window_size[0], window_size[1])
+                self.lightbuffer.set_size(window_size[0], window_size[1])
+                self.plain_buff.set_size(window_size[0]//2, window_size[1]//2)
                 for buff in self.filter_buff.values():
-                    old_size = buff.getFbSize()
+                    old_size = buff.get_fb_size()
                     x_factor = float(old_size[0]) / \
                         float(self.last_window_size[0])
                     y_factor = float(old_size[1]) / \
                         float(self.last_window_size[1])
-                    buff.setSize(
+                    buff.set_size(
                         int(window_size[0] * x_factor), int(window_size[1] * y_factor))
                 self.last_window_size = window_size
 
-    def add_filter(self, shader_name, inputs,
-                   name=None, size_factor=1.0,
-                   clear_color=None, translate_tex_name=None,
+    def add_filter(self, shader, inputs={},
+                   name=None, size=1.0,
+                   clear_color=(0, 0, 0, 0), translate_tex_name=None,
                    define=None):
         """
         Creates and adds filter stage to the filter stage dicts:
@@ -534,28 +558,29 @@ class DeferredRenderer(DirectObject):
         the created fullscreen texture is put in self.filter_tex[name]
         the created camera is put in self.filter_cam[name]
         """
+        #print(inputs)
         if name is None:
-            name = shader_name
+            name = shader
         index = len(self.filter_buff)
         quad, tex, buff, cam = self._make_filter_stage(
-            sort=index, size=size_factor, clear_color=clear_color)
+            sort=index, size=size, clear_color=clear_color, name=name)
         self.filter_buff[name] = buff
         self.filter_quad[name] = quad
         self.filter_tex[name] = tex
         self.filter_cam[name] = cam
 
-        quad.setShader(loader.loadShaderGLSL(self.v.format(
-            shader_name), self.f.format(shader_name), define))
+        quad.set_shader(loader.load_shader_GLSL(self.v.format(
+            shader), self.f.format(shader), define))
         for name, value in inputs.items():
             if isinstance(value, basestring):
-                value = loader.loadTexture(value)
-            quad.setShaderInput(str(name), value)
+                value = loader.load_texture(value, sRgb=loader.use_srgb)
+            quad.set_shader_input(str(name), value)
         if translate_tex_name:
             for old_name, new_name in translate_tex_name.items():
                 value = self.filter_tex[old_name]
-                quad.setShaderInput(str(new_name), value)
+                quad.set_shader_input(str(new_name), value)
 
-    def _make_filter_stage(self, sort=0, size=1.0, clear_color=None):
+    def _make_filter_stage(self, sort=0, size=1.0, clear_color=None, name=None):
         """
         Creates a buffer, quad, camera and texture needed for a filter stage
         Use add_filter() not this function
@@ -563,42 +588,45 @@ class DeferredRenderer(DirectObject):
         # make a root for the buffer
         root = NodePath("filterBufferRoot")
         tex = Texture()
-        tex.setWrapU(Texture.WM_clamp)
-        tex.setWrapV(Texture.WM_clamp)
-        buff_size_x = int(base.win.getXSize() * size)
-        buff_size_y = int(base.win.getYSize() * size)
+        tex.set_wrap_u(Texture.WM_clamp)
+        tex.set_wrap_v(Texture.WM_clamp)
+        buff_size_x = int(base.win.get_x_size() * size)
+        buff_size_y = int(base.win.get_y_size() * size)
         # buff=base.win.makeTextureBuffer("buff", buff_size_x, buff_size_y, tex)
         winprops = WindowProperties()
-        winprops.setSize(buff_size_x, buff_size_y)
+        winprops.set_size(buff_size_x, buff_size_y)
         props = FrameBufferProperties()
-        props.setRgbColor(True)
-        props.setRgbaBits(8, 8, 8, 8)
-        props.setDepthBits(0)
-        buff = base.graphicsEngine.makeOutput(
-            base.pipe, 'filter_stage', sort,
+        props.set_rgb_color(True)
+        props.set_rgba_bits(8, 8, 8, 8)
+        props.set_depth_bits(0)
+        buff = base.graphicsEngine.make_output(
+            base.pipe, 'filter_stage_'+name, sort,
             props, winprops,
             GraphicsPipe.BF_resizeable,
-            base.win.getGsg(), base.win)
-        buff.addRenderTexture(
+            base.win.get_gsg(), base.win)
+        buff.add_render_texture(
             tex=tex, mode=GraphicsOutput.RTMBindOrCopy, bitplane=GraphicsOutput.RTPColor)
         # buff.setSort(sort)
         # buff.setSort(0)
-        if clear_color:
-            buff.setClearColor(clear_color)
-            buff.setClearActive(GraphicsOutput.RTPColor, True)
-        cam = base.makeCamera(win=buff)
-        cam.reparentTo(root)
+        if clear_color is None:
+            buff.set_clear_active(GraphicsOutput.RTPColor, False)
+        else:
+            buff.set_clear_color(clear_color)
+            buff.set_clear_active(GraphicsOutput.RTPColor, True)
+
+        cam = base.make_camera(win=buff)
+        cam.reparent_to(root)
         cam.set_pos(buff_size_x * 0.5, buff_size_y * 0.5, 100)
         cam.setP(-90)
         lens = OrthographicLens()
-        lens.setFilmSize(buff_size_x, buff_size_y)
-        cam.node().setLens(lens)
+        lens.set_film_size(buff_size_x, buff_size_y)
+        cam.node().set_lens(lens)
         # plane with the texture, a blank texture for now
         cm = CardMaker("plane")
         cm.setFrame(0, buff_size_x, 0, buff_size_y)
-        quad = root.attachNewNode(cm.generate())
-        quad.lookAt(0, 0, -1)
-        quad.setLightOff()
+        quad = root.attach_new_node(cm.generate())
+        quad.look_at(0, 0, -1)
+        quad.set_light_off()
         return quad, tex, buff, cam
 
     def _make_forward_stage(self):
@@ -607,21 +635,32 @@ class DeferredRenderer(DirectObject):
         """
         root = NodePath("forwardRoot")
         tex = Texture()
-        tex.setWrapU(Texture.WM_clamp)
-        tex.setWrapV(Texture.WM_clamp)
-        buff_size_x = int(base.win.getXSize())
-        buff_size_y = int(base.win.getYSize())
-        buff = base.win.makeTextureBuffer(
-            "buff", buff_size_x, buff_size_y, tex)
-        buff.setSort(2)
-        buff.setClearColor((0, 0, 0, 0))
-        cam = base.makeCamera(win=buff)
-        cam.reparentTo(root)
-        lens = base.cam.node().getLens()
-        cam.node().setLens(lens)
+        tex.set_wrap_u(Texture.WM_clamp)
+        tex.set_wrap_v(Texture.WM_clamp)
+        buff_size_x = int(base.win.get_x_size()/2)
+        buff_size_y = int(base.win.get_y_size()/2)
+
+        winprops = WindowProperties()
+        winprops.set_size(buff_size_x, buff_size_y)
+        props = FrameBufferProperties()
+        props.set_rgb_color(True)
+        props.set_rgba_bits(8, 8, 8, 8)
+        props.set_depth_bits(0)
+        buff = base.graphicsEngine.make_output(
+            base.pipe, 'forward_stage', 2,
+            props, winprops,
+            GraphicsPipe.BF_resizeable,
+            base.win.get_gsg(), base.win)
+        buff.add_render_texture(
+            tex=tex, mode=GraphicsOutput.RTMBindOrCopy, bitplane=GraphicsOutput.RTPColor)
+        buff.set_clear_color((0, 0, 0, 0))
+        cam = base.make_camera(win=buff)
+        cam.reparent_to(root)
+        lens = base.cam.node().get_lens()
+        cam.node().set_lens(lens)
         mask = BitMask32.bit(self.modelMask)
-        mask.setBit(self.lightMask)
-        cam.node().setCameraMask(mask)
+        mask.set_bit(self.lightMask)
+        cam.node().set_camera_mask(mask)
         return root, tex, cam, buff
 
     def set_directional_light(self, color, direction, shadow_size=0):
@@ -629,8 +668,8 @@ class DeferredRenderer(DirectObject):
         Sets value for a directional light,
         use the SceneLight class to set the lights!
         """
-        self.filter_quad['final_light'].setShaderInput('light_color', color)
-        self.filter_quad['final_light'].setShaderInput('direction', direction)
+        self.filter_quad['final_light'].set_shader_input('light_color', color)
+        self.filter_quad['final_light'].set_shader_input('direction', direction)
 
     def add_cone_light(self, color, pos=(0, 0, 0), hpr=(0, 0, 0), radius=1.0, fov=45.0, shadow_size=0.0):
         """
@@ -643,41 +682,41 @@ class DeferredRenderer(DirectObject):
         model = loader.load_model("models/cone")
         # temp=model.copyTo(self.plain_root)
         # self.lights.append(model)
-        model.reparentTo(self.light_root)
-        model.setScale(xy_scale, 1.0, xy_scale)
-        model.flattenStrong()
-        model.setScale(radius)
+        model.reparent_to(self.light_root)
+        model.set_scale(xy_scale, 1.0, xy_scale)
+        model.flatten_strong()
+        model.set_scale(radius)
         model.set_pos(pos)
         model.setHpr(hpr)
         # debug=self.lights[-1].copyTo(self.plain_root)
-        model.setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
-        model.setAttrib(CullFaceAttrib.make(
+        model.set_attrib(DepthTestAttrib.make(RenderAttrib.MLess))
+        model.set_attrib(CullFaceAttrib.make(
             CullFaceAttrib.MCullCounterClockwise))
-        model.setAttrib(ColorBlendAttrib.make(
+        model.set_attrib(ColorBlendAttrib.make(
             ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
-        model.setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
+        model.set_attrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
 
-        model.setShader(loader.loadShaderGLSL(self.v.format(
+        model.set_shader(loader.load_shader_GLSL(self.v.format(
             'spot_light'), self.f.format('spot_light'), self.shading_setup))
-        model.setShaderInput("light_radius", float(radius))
-        model.setShaderInput("light_pos", Vec4(pos, 1.0))
-        model.setShaderInput("light_fov", deg2Rad(fov))
-        model.setShaderInput("light_pos", Vec4(pos, 1.0))
-        p3d_light = render.attachNewNode(Spotlight("Spotlight"))
+        model.set_shader_input("light_radius", float(radius))
+        model.set_shader_input("light_pos", Vec4(pos, 1.0))
+        model.set_shader_input("light_fov", deg2Rad(fov))
+        model.set_shader_input("light_pos", Vec4(pos, 1.0))
+        p3d_light = render.attach_new_node(Spotlight("Spotlight"))
         p3d_light.set_pos(render, pos)
         p3d_light.setHpr(render, hpr)
-        p3d_light.node().setExponent(20)
+        p3d_light.node().set_exponent(20)
         if shadow_size > 0.0:
             p3d_light.node().set_shadow_caster(True, shadow_size, shadow_size)
-            model.setShaderInput("bias", 0.001)
-            model.setShader(loader.loadShaderGLSL(self.v.format(
+            model.set_shader_input("bias", 0.001)
+            model.set_shader(loader.load_shader_GLSL(self.v.format(
             'spot_light_shadow'), self.f.format('spot_light_shadow'), self.shading_setup))
-        # p3d_light.node().setCameraMask(self.modelMask)
-        model.setShaderInput("spot", p3d_light)
+        # p3d_light.node().set_camera_mask(self.modelMask)
+        model.set_shader_input("spot", p3d_light)
         #p3d_light.node().showFrustum()
-        p3d_light.node().getLens().set_fov(fov)
-        p3d_light.node().getLens().setFar(radius)
-        p3d_light.node().getLens().setNear(1.0)
+        p3d_light.node().get_lens().set_fov(fov)
+        p3d_light.node().get_lens().set_far(radius)
+        p3d_light.node().get_lens().set_near(1.0)
         return model, p3d_light
 
     def add_point_light(self, color, model="models/sphere", pos=(0, 0, 0), radius=1.0, shadow_size=0):
@@ -690,38 +729,43 @@ class DeferredRenderer(DirectObject):
         if not isinstance(model, NodePath):
             model = loader.load_model(model)
         # self.lights.append(model)
-        model.reparentTo(self.light_root)
+        model.reparent_to(self.light_root)
         model.set_pos(pos)
-        model.setScale(radius)
-        model.setShader(loader.loadShaderGLSL(self.v.format(
+        model.set_scale(radius*1.1)
+        model.set_shader(loader.load_shader_GLSL(self.v.format(
             'light'), self.f.format('light'), self.shading_setup))
-        model.setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
-        model.setAttrib(CullFaceAttrib.make(
+        model.set_attrib(DepthTestAttrib.make(RenderAttrib.MLess))
+        model.set_attrib(CullFaceAttrib.make(
             CullFaceAttrib.MCullCounterClockwise))
-        model.setAttrib(ColorBlendAttrib.make(
+        model.set_attrib(ColorBlendAttrib.make(
             ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
-        model.setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
+        model.set_attrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
         # shader inpts
-        model.setShaderInput("light", Vec4(color, radius * radius))
-        model.setShaderInput("light_pos", Vec4(pos, 1.0))
+        model.set_shader_input("light", Vec4(color, radius * radius))
+        model.set_shader_input("light_pos", Vec4(pos, 1.0))
         if shadow_size > 0:
-            model.setShader(loader.loadShaderGLSL(self.v.format(
+            model.set_shader(loader.load_shader_GLSL(self.v.format(
                 'light_shadow'), self.f.format('light_shadow'), self.shading_setup))
-            p3d_light = render.attachNewNode(PointLight("PointLight"))
+            p3d_light = render.attach_new_node(PointLight("PointLight"))
             p3d_light.set_pos(render, pos)
             p3d_light.node().set_shadow_caster(True, shadow_size, shadow_size)
-            p3d_light.node().setCameraMask(self.modelMask)
+            #p3d_light.node().set_camera_mask(self.modelMask)
+            p3d_light.node().set_camera_mask(BitMask32.bit(13))
             #p3d_light.node().showFrustum()
             for i in range(6):
-                p3d_light.node().getLens(i).setNearFar(0.1, radius)
-            model.setShaderInput("shadowcaster", p3d_light)
-            model.setShaderInput("near", 0.1)
-            model.setShaderInput("bias", (1.0/radius)*0.095)
+                p3d_light.node().get_lens(i).set_near_far(0.1, radius)
+                #p3d_light.node().get_lens(i).makeBounds()
+            #p3d_light.node().setBounds(OmniBoundingVolume())
+            #p3d_light.node().setFinal(True)
+
+            model.set_shader_input("shadowcaster", p3d_light)
+            model.set_shader_input("near", 0.1)
+            model.set_shader_input("bias", (1.0/radius)*0.095)
         else:
-            p3d_light = render.attachNewNode('dummy_node')
+            p3d_light = render.attach_new_node('dummy_node')
         return model, p3d_light
 
-    def _make_FBO(self, name, auxrgba=0, multisample=0):
+    def _make_FBO(self, name, auxrgba=0, multisample=0, srgb=False):
         """
         This routine creates an offscreen buffer.  All the complicated
         parameters are basically demanding capabilities from the offscreen
@@ -732,25 +776,25 @@ class DeferredRenderer(DirectObject):
         """
         winprops = WindowProperties()
         props = FrameBufferProperties()
-        props.setRgbColor(True)
-        props.setRgbaBits(8, 8, 8, 8)
-        props.setDepthBits(1)
-        props.setAuxRgba(auxrgba)
+        props.set_rgb_color(True)
+        props.set_rgba_bits(8, 8, 8, 8)
+        props.set_depth_bits(16)
+        props.set_aux_rgba(auxrgba)
+        props.set_srgb_color(srgb)
         if multisample>0:
-            props.setMultisamples(multisample)
-        return base.graphicsEngine.makeOutput(
+            props.set_multisamples(multisample)
+        return base.graphicsEngine.make_output(
             base.pipe, name, -2,
             props, winprops,
             GraphicsPipe.BFSizeTrackHost | GraphicsPipe.BFCanBindEvery |
             GraphicsPipe.BFRttCumulative | GraphicsPipe.BFRefuseWindow,
-            base.win.getGsg(), base.win)
+            base.win.get_gsg(), base.win)
 
     def _update(self, task):
         """
         Update task, currently only updates the forward rendering camera pos/hpr
         """
-        self.plain_cam.set_pos(base.cam.getPos(render))
-        self.plain_cam.setHpr(base.cam.getHpr(render))
+        self.plain_cam.set_pos_hpr(base.cam.get_pos(render), base.cam.get_hpr(render))
         return task.again
 
 # this will replace the default Loader
@@ -761,7 +805,7 @@ class WrappedLoader(object):
     def __init__(self, original_loader):
         self.original_loader = original_loader
         self.texture_shader_inputs = []
-        self.fix_srgb = ConfigVariableBool('framebuffer-srgb').getValue()
+        self.use_srgb = ConfigVariableBool('framebuffer-srgb').getValue()
         self.shader_cache = {}
 
     def _from_snake_case(self, attr):
@@ -777,12 +821,13 @@ class WrappedLoader(object):
                 camel_case+=char
         return camel_case
 
+    #@lru_cache(maxsize=64)
     def __getattr__(self,attr):
         new_attr=self._from_snake_case(attr)
         if hasattr(self, new_attr):
             return self.__getattribute__(new_attr)
 
-    def fixTransparancy(self, model):
+    def fix_transparency(self, model):
         for tex_stage in model.findAllTextureStages():
             tex = model.findTexture(tex_stage)
             if tex:
@@ -811,6 +856,7 @@ class WrappedLoader(object):
                 model.setTexture(tex_stage, tex, 1)
 
     def setTextureInputs(self, model):
+        #print ('Fixing model', model)
         slots_filled = set()
         # find all the textures, easy mode - slot is fitting the stage mode
         # (eg. slot0 is diffuse/color)
@@ -819,6 +865,7 @@ class WrappedLoader(object):
                 break
             tex = model.findTexture(tex_stage)
             if tex:
+                #print('Found tex:', tex.getFilename())
                 mode = tex_stage.getMode()
                 if mode in self.texture_shader_inputs[slot]['stage_modes']:
                     model.setShaderInput(self.texture_shader_inputs[
@@ -848,6 +895,7 @@ class WrappedLoader(object):
             return
         missing_slots = set(
             range(len(self.texture_shader_inputs))) - slots_filled
+        #print ('Fail for model:', model)
         # set defaults
         for slot in missing_slots:
             model.setShaderInput(self.texture_shader_inputs[slot][
@@ -862,10 +910,10 @@ class WrappedLoader(object):
         model = self.original_loader.loadModel(
             modelPath, loaderOptions, noCache, allowInstance, okMissing, callback, extraArgs, priority)
 
-        if self.fix_srgb:
+        if self.use_srgb:
             self.fixSrgbTextures(model)
         self.setTextureInputs(model)
-        self.fixTransparancy(model)
+        self.fix_transparency(model)
         return model
 
     def cancelRequest(self, cb):
@@ -1140,16 +1188,26 @@ class SphereLight(object):
     l.radius= 13
     """
 
-    def __init__(self, color, pos, radius, shadow_size=0):
+    def __init__(self, color, pos, radius, shadow_size=None, shadow_bias=None):
         if not hasattr(builtins, 'deferred_renderer'):
             raise RuntimeError('You need a DeferredRenderer')
         self.__radius = radius
         self.__color = color
+        if shadow_size is None:
+            shadow_size=deferred_renderer.shadow_size
         self.geom, self.p3d_light = deferred_renderer.add_point_light(color=color,
                                                                       model="models/sphere",
                                                                       pos=pos,
                                                                       radius=radius,
                                                                       shadow_size=shadow_size)
+        if shadow_bias:
+            self.set_shadow_bias(shadow_bias)
+
+    def set_shadow_size(self, size):
+        self.p3d_light.node().set_shadow_caster(True, size, size)
+
+    def set_shadow_bias(self, bias):
+        self.geom.setShaderInput("bias", bias)
 
     def set_color(self, color):
         """
@@ -1190,7 +1248,7 @@ class SphereLight(object):
                 args[0], Vec3(args[0], args[1], args[2]))
         else:  # something ???
             pos = Vec3(args[0], args[1], args[2])
-        self.geom.setShaderInput("light_pos", Vec4(pos, 1.0))
+        #self.geom.setShaderInput("light_pos", Vec4(pos, 1.0))
         self.geom.set_pos(render, pos)
         self.p3d_light.set_pos(render, pos)
 

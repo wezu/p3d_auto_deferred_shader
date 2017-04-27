@@ -5,8 +5,8 @@
 uniform sampler2D pre_aa; // 0
 uniform float vx_offset;
 //uniform vec2 win_size;
-uniform float FXAA_SPAN_MAX = 8.0;
-uniform float FXAA_REDUCE_MUL = 1.0/8.0;
+uniform float span_max = 8.0;
+uniform float reduce_mul = 1.0/8.0;
 //uniform float FXAA_SUBPIX_SHIFT = 1.0/4.0;
 in vec4 posPos;
 
@@ -23,8 +23,8 @@ vec3 FxaaPixelShader(
 {
 /*---------------------------------------------------------*/
     #define FXAA_REDUCE_MIN   (1.0/128.0)
-    //#define FXAA_REDUCE_MUL   (1.0/8.0)
-    //#define FXAA_SPAN_MAX     8.0
+    //#define reduce_mul   (1.0/8.0)
+    //#define span_max     8.0
 /*---------------------------------------------------------*/
     vec3 rgbNW = FxaaTexLod0(tex, posPos.zw).xyz;
     vec3 rgbNE = FxaaTexOff(tex, posPos.zw, FxaaInt2(1,0), rcpFrame.xy).xyz;
@@ -47,11 +47,11 @@ vec3 FxaaPixelShader(
     dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
 /*---------------------------------------------------------*/
     float dirReduce = max(
-        (lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * FXAA_REDUCE_MUL),
+        (lumaNW + lumaNE + lumaSW + lumaSE) * (0.25 * reduce_mul),
         FXAA_REDUCE_MIN);
     float rcpDirMin = 1.0/(min(abs(dir.x), abs(dir.y)) + dirReduce);
-    dir = min(FxaaFloat2( FXAA_SPAN_MAX,  FXAA_SPAN_MAX),
-          max(FxaaFloat2(-FXAA_SPAN_MAX, -FXAA_SPAN_MAX),
+    dir = min(FxaaFloat2( span_max,  span_max),
+          max(FxaaFloat2(-span_max, -span_max),
           dir * rcpDirMin)) * rcpFrame.xy;
 /*--------------------------------------------------------*/
     vec3 rgbA = (1.0/2.0) * (
@@ -77,7 +77,6 @@ vec4 PostFX(sampler2D tex, vec2 uv)
 
 void main()
 {
-  //vec2 uv = gl_TexCoord[0].st;
   gl_FragColor = PostFX(pre_aa, posPos.xy);
-  //gl_FragColor =vec4(1.0, 0.0, 0.0, 0.5);
+  //gl_FragColor =texture(pre_aa, posPos.xy);
 }

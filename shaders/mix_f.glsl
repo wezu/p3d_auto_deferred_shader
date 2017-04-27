@@ -35,12 +35,19 @@ vec3 applyColorLUT(sampler2D lut, vec3 color)
     return mix(sample1, sample2, offsZ);
     }
 
+vec3 srgbEncode(vec3 color){
+   float r = color.r < 0.0031308 ? 12.92 * color.r : 1.055 * pow(color.r, 1.0/2.4) - 0.055;
+   float g = color.g < 0.0031308 ? 12.92 * color.g : 1.055 * pow(color.g, 1.0/2.4) - 0.055;
+   float b = color.b < 0.0031308 ? 12.92 * color.b : 1.055 * pow(color.b, 1.0/2.4) - 0.055;
+   return vec3(r, g, b);
+}
+
 void main()
     {
     vec4 color=texture(final_color,uv);
     vec4 color_forward=texture(forward_tex,uv);
     vec2 win_size=textureSize(final_color, 0).xy;
-    vec3 final_color=mix(color.rgb,color_forward.rgb, color_forward.a);
+    vec3 final_color=color.rgb;
 
     #ifndef DISABLE_SSR
     vec4 ssr_tex=texture(ssr,uv);
@@ -57,8 +64,14 @@ void main()
     final_color.rgb*=ao_tex;
     #endif
 
+
+    final_color=mix(final_color.rgb, color_forward.rgb, color_forward.a);
+
+
     #ifndef DISABLE_LUT
-    final_color.rgb=applyColorLUT(lut_tex, final_color.rgb);
+    final_color.rgb=applyColorLUT(lut_tex, srgbEncode(final_color.rgb));
+    //final_color.rgb=lookup(lut_tex, final_color.rgb);
+    //final_color=vec3(sRGB(final_color.r),sRGB(final_color.g),sRGB(final_color.b));
     #endif
 
     #ifndef DISABLE_DITHERING
@@ -66,6 +79,8 @@ void main()
     final_color+= ((noise.r + noise.g)-0.5)/255.0;
     #endif
 
+    //final_color=vec3(ao_tex,ao_tex,ao_tex);
+    //final_color+= ((noise.r + noise.g)-0.5)/255.0;
+
     gl_FragData[0]=vec4(final_color.rgb, color.a);
-    //gl_FragData[0]=vec4(ao, ao, ao, 1.0);
     }

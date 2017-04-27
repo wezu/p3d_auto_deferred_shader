@@ -27,16 +27,14 @@ void main()
     float fog_factor=fog_mix*pow(min(1.0, max(0.0,-view_pos.z-fog_start)/(fog_stop-fog_start)),fog_power);
     vec4 final=mix(color,fog_color,fog_factor);
 
-    vec4 view_pos_center = trans_apiclip_of_camera_to_apiview_of_camera * vec4(0.0, 0.0, depth, 1.0);
-    view_pos_center.xyz /= view_pos_center.w;
+    float z=-view_pos.z +dof_near;
 
-    float dynamic_near=clamp(-view_pos_center.z*0.1, 0.0, 1.0);
-
-    float dof_factor_far=sin(min(1.0, -view_pos.z/dof_far)*PI);
-    float dof_factor_near=smoothstep(0.0, dof_near, dof_factor_far);
-    float dof_factor=mix(dof_factor_near, dof_factor_far, max(0.0, (-view_pos.z-(dof_far*0.5))/dof_far));
+    float dof_factor_far=sin(min(1.0, z/dof_far)*PI);
+    float dof_factor_near=pow(smoothstep(0.0, 0.9, dof_factor_far), 2.0);
+    float dof_factor=mix(dof_factor_near, dof_factor_far, max(0.0, (z-(dof_far*0.5))/dof_far));
 
     final.a=dof_factor;
+    //final=vec4(dof_factor);
 
     gl_FragData[0]=final;
     //gl_FragData[0]=vec4(dynamic_near);

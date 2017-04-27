@@ -83,10 +83,10 @@ void main()
         color+=light_color*max(dot(normal.xyz,light_vec), 0.0);
         #endif
         //spec
-        view_vec = normalize(-view_pos.xyz);
-        reflect_vec=normalize(reflect(light_vec,normal.xyz));
-        spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
-        final_spec=light_color*spec;
+        //view_vec = normalize(-view_pos.xyz);
+        //reflect_vec=normalize(reflect(light_vec,normal.xyz));
+        //spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
+        //final_spec=light_color*spec;
     #endif
     #ifdef NUM_LIGHTS
         for (int i=0; i<NUM_LIGHTS; ++i)
@@ -99,14 +99,15 @@ void main()
             color+=light_color[i]*max(dot(normal.xyz,light_vec), 0.0);
             #endif
             //spec
-            view_vec = normalize(-view_pos.xyz);
-            reflect_vec=normalize(reflect(light_vec,normal.xyz));
-            spec+=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
-            final_spec+=light_color[i]*spec;
+            //view_vec = normalize(-view_pos.xyz);
+            //reflect_vec=normalize(reflect(light_vec,normal.xyz));
+            //spec+=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss;
+            //final_spec+=light_color[i]*spec;
             }
     #endif
 
-    vec4 final=pre_light_tex+vec4((color*albedo)+final_spec, spec+gloss);
+    //vec4 final=pre_light_tex+vec4((color*albedo)+final_spec, spec+gloss);
+    vec4 final=pre_light_tex+vec4((color*albedo), gloss);
 
     final.rgb+=albedo*glow;
 
