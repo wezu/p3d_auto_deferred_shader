@@ -28,6 +28,8 @@ class Demo(DirectObject):
         base.trackball.node().setPos(0, 20, 0)
 
         DeferredRenderer(preset='full')
+        #uncomment is AO is a mess
+        #deferred_renderer.set_filter_define('compose', 'DISABLE_AO, 1)
 
         column=loader.loadModel("models/column")
         column.reparentTo(deferred_render)
@@ -58,6 +60,8 @@ class Demo(DirectObject):
         #self.light_0.add_light(color=(0.0, 0.0, 0.2), direction=(0.5, -0.5, -1.0), name='ambient') #not recomended but working
         self.light_1 = SphereLight(color=(0.9,0.9,0.3), pos=(2,3,2), radius=8.0, shadow_size=256)
         self.light_2 = ConeLight(color=(0.9, 0.9, 0.3), pos=(4,0,5), look_at=(12, 0, 0), radius=16.0, fov=50.0, shadow_size=256)
+
+        self.light_2.set_color((1, 0, 0, 0))
 
         self.accept('space', self.do_debug)
         self.accept('1', self.change_shadow_bias, [0.001])

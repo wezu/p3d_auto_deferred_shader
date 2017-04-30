@@ -701,11 +701,11 @@ class DeferredRenderer(DirectObject):
         model.set_shader_input("light_radius", float(radius))
         model.set_shader_input("light_pos", Vec4(pos, 1.0))
         model.set_shader_input("light_fov", deg2Rad(fov))
-        model.set_shader_input("light_pos", Vec4(pos, 1.0))
         p3d_light = render.attach_new_node(Spotlight("Spotlight"))
         p3d_light.set_pos(render, pos)
         p3d_light.setHpr(render, hpr)
         p3d_light.node().set_exponent(20)
+        p3d_light.node().set_color(Vec4(color, 1.0))
         if shadow_size > 0.0:
             p3d_light.node().set_shadow_caster(True, shadow_size, shadow_size)
             model.set_shader_input("bias", 0.001)
@@ -1335,6 +1335,8 @@ class ConeLight(object):
                                                                      radius=radius,
                                                                      fov=fov,
                                                                      shadow_size=shadow_size)
+    def set_color(self, color):
+        self.p3d_light.node().set_color(Vec4(color))
 
     def set_fov(self, fov):
         """
@@ -1363,21 +1365,21 @@ class ConeLight(object):
         self.geom.setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
         self.geom.setShader(loader.loadShaderGLSL(deferred_renderer.v.format(
             'spot_light'), deferred_renderer.f.format('spot_light'), deferred_renderer.shading_setup))
-        self.geom.setShaderInput("light_radius", float(self.__radius))
-        self.geom.setShaderInput("light_pos", Vec4(self.__pos, 1.0))
-        self.geom.setShaderInput("light_fov", deg2Rad(fov))
-        self.geom.setShaderInput("spot", self.p3d_light)
+        self.geom.set_shader_input("light_radius", float(self.__radius))
+        self.geom.set_shader_input("light_pos", Vec4(self.__pos, 1.0))
+        self.geom.set_shader_input("light_fov", deg2Rad(fov))
+        self.geom.set_shader_input("spot", self.p3d_light)
         self.__fov = fov
 
     def set_radius(self, radius):
         """
         Sets the radius (range) of the light
         """
-        self.geom.setShaderInput("light_radius", float(radius))
-        self.geom.setScale(radius)
+        self.geom.set_shader_input("light_radius", float(radius))
+        self.geom.set_scale(radius)
         self.__radius = radius
         try:
-            self.p3d_light.node().getLens().setNearFar(0.1, radius)
+            self.p3d_light.node().get_lens().set_near_far(0.1, radius)
         except:
             pass
 
@@ -1385,8 +1387,8 @@ class ConeLight(object):
         """
         Sets the HPR of a light
         """
-        self.geom.setHpr(hpr)
-        self.p3d_light.setHpr(hpr)
+        self.geom.set_hpr(hpr)
+        self.p3d_light.set_hpr(hpr)
         self.__hpr = hrp
 
     def set_pos(self, *args):
@@ -1399,11 +1401,11 @@ class ConeLight(object):
         elif len(args) == 1:  # one arg, must be a vector
             pos = Vec3(args[0])
         elif len(args) == 2:  # two args, must be a node and  vector
-            pos = render.getRelativePoint(args[0], Vec3(args[1]))
+            pos = render.get_relative_point(args[0], Vec3(args[1]))
         elif len(args) == 3:  # vector
             pos = Vec3(args[0], args[1], args[2])
         elif len(args) == 4:  # node and vector?
-            pos = render.getRelativePoint(
+            pos = render.get_relative_point(
                 args[0], Vec3(args[0], args[1], args[2]))
         else:  # something ???
             pos = Vec3(args[0], args[1], args[2])
@@ -1421,17 +1423,17 @@ class ConeLight(object):
         """
         Sets the hpr of the light so that it looks at the given node or pos
         """
-        self.geom.lookAt(node_or_pos)
-        self.p3d_light.lookAt(node_or_pos)
-        self.__hpr = self.p3d_light.getHpr(render)
+        self.geom.look_at(node_or_pos)
+        self.p3d_light.look_at(node_or_pos)
+        self.__hpr = self.p3d_light.get_hpr(render)
 
     def remove(self):
         self.geom.removeNode()
         try:
-            buff = self.p3d_light.node().getShadowBuffer(base.win.getGsg())
-            buff.clearRenderTextures()
-            base.win.getGsg().getEngine().removeWindow(buff)
-            self.p3d_light.node().setShadowCaster(False)
+            buff = self.p3d_light.node().get_shadow_buffer(base.win.getGsg())
+            buff.clear_render_textures()
+            base.win.get_gsg().get_engine().remove_window(buff)
+            self.p3d_light.node().set_shadow_caster(False)
         except:
             pass
         self.p3d_light.removeNode()
