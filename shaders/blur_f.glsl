@@ -28,6 +28,6 @@ void main()
 
 
 
-    gl_FragColor = out_tex;
+    gl_FragData[0] = out_tex;
     }
 

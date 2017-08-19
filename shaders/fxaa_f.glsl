@@ -77,6 +77,6 @@ vec4 PostFX(sampler2D tex, vec2 uv)
 
 void main()
 {
-  gl_FragColor = PostFX(pre_aa, posPos.xy);
+  gl_FragData[0] = PostFX(pre_aa, posPos.xy);
   //gl_FragColor =texture(pre_aa, posPos.xy);
 }

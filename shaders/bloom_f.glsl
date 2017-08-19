@@ -17,6 +17,6 @@ void main()
 
     final_color+=clamp((color.xyz-0.2)*2.0, 0.0, 1.0)*gloss;
 
-    gl_FragColor = vec4(final_color, 1.0);
+    gl_FragData[0] = vec4(final_color, 1.0);
     }
 

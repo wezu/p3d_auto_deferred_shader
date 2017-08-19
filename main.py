@@ -1,8 +1,8 @@
 from __future__ import print_function
 from panda3d.core import *
-#loadPrcFileData("", "show-buffers 1")
-loadPrcFileData("", "shadow-depth-bits 32")
-loadPrcFileData("", "depth-bits 32")
+loadPrcFileData("", "show-buffers 0")
+loadPrcFileData("", "shadow-depth-bits 24")
+loadPrcFileData("", "depth-bits 24")
 loadPrcFileData('','framebuffer-srgb true')
 loadPrcFileData('','textures-power-2 None')
 loadPrcFileData("", "sync-video 0")
@@ -28,6 +28,7 @@ class Demo(DirectObject):
         base.trackball.node().setPos(0, 20, 0)
 
         DeferredRenderer(preset='full')
+        deferred_renderer.set_near_far(1.0,1000.0)
         #uncomment is AO is a mess
         #deferred_renderer.set_filter_define('compose', 'DISABLE_AO, 1)
 

@@ -28,6 +28,6 @@ void main()
     out_tex += texture(compose, uv+vec2(-0.791559,-0.597705)*depth_sharp);
     out_tex/=13.0;
 
-    gl_FragColor = vec4(mix(out_tex.rgb, base_tex.rgb, base_tex.a), 1.0);
+    gl_FragData[0] = vec4(mix(out_tex.rgb, base_tex.rgb, base_tex.a), 1.0);
     }
 

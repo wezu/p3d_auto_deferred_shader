@@ -72,13 +72,11 @@ class DeferredRenderer(DirectObject):
         self._setup_g_buffer(self.shading_setup)
 
         self.preset = {'custom': [{'shader': 'ao',
-                                 'inputs': {'random_tex': 'tex/random.png',
-                                            'random_size': 64.0,
-                                            'sample_rad': 0.4,
-                                            'intensity': 10.0,
-                                            'scale': 0.9,
-                                            'bias': 0.4,
-                                            'fade_distance': 80.0}},
+                                 'inputs': {'random_tex': 'tex/noise.png',
+                                             'sample_rad' : 0.02,
+                                             'strength' : 0.1,
+                                             'falloff' : 0.9,
+                                             'amount' : 1.0}},
                                 {'name': 'final_light', 'shader': 'dir_light',
                                  'define': {'HALFLAMBERT': 2.0},
                                  'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
@@ -100,20 +98,18 @@ class DeferredRenderer(DirectObject):
                                             'subpix_shift': float(1.0 / 8.0)}}
                                 ],
                       'full': [{'shader': 'ao',
-                                 'inputs': {'random_tex': 'tex/random.png',
-                                            'random_size': 64.0,
-                                            'sample_rad': 0.4,
-                                            'intensity': 10.0,
-                                            'scale': 0.9,
-                                            'bias': 0.4,
-                                            'fade_distance': 80.0}},
+                                 'inputs': {'random_tex': 'tex/noise.png',
+                                             'sample_rad' : 0.02,
+                                             'strength' : 0.1,
+                                             'falloff' : 0.9,
+                                             'amount' : 1.0}},
                                 {'name': 'final_light', 'shader': 'dir_light',
                                  'define': {'HALFLAMBERT': 2.0},
                                  'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
                                 {'shader': 'fog',
                                  'inputs': {'fog_color': Vec4(0.0, 0.0, 0.0, 0.0),
                                             # start, stop, power, mix
-                                            'fog_config': Vec4(25.0, 60.0, 2.0, 1.0),
+                                            'fog_config': Vec4(25.0, 600.0, 2.0, 1.0),
                                             'dof_near': 3.0,  # 0.0..1.0 not distance!
                                             'dof_far': 55.0}},  # distance in units to full blur
                                 {'shader': 'ssr', 'inputs': {}},
@@ -154,13 +150,11 @@ class DeferredRenderer(DirectObject):
                                                'subpix_shift': float(1.0 / 8.0)}}
                                    ],
                        'medium': [{'shader': 'ao', 'size': 0.5,
-                                   'inputs': {'random_tex': 'tex/random.png',
-                                              'random_size': 64.0,
-                                              'sample_rad': 0.4,
-                                              'intensity': 10.0,
-                                              'scale': 0.9,
-                                              'bias': 0.4,
-                                              'fade_distance': 80.0}},
+                                   'inputs': {'random_tex': 'tex/noise.png',
+                                             'sample_rad' : 0.02,
+                                             'strength' : 0.1,
+                                             'falloff' : 0.9,
+                                             'amount' : 1.0}},
                                   {'name': 'final_light', 'shader': 'dir_light',
                                    'define': {'HALFLAMBERT': 2.0},
                                    'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
@@ -401,6 +395,12 @@ class DeferredRenderer(DirectObject):
                 value=tex
             self.filter_quad[stage_name].set_shader_input(str(name), value)
             # print(stage_name, name, value)
+
+    def set_near_far(self, near, far):
+        base.cam.node().get_lens().set_near_far(near, far)
+        lens = base.cam.node().get_lens()
+        self.modelcam.node().set_lens(lens)
+        self.lightcam.node().set_lens(lens)
 
     def _setup_g_buffer(self, define=None):
         """
@@ -855,6 +855,11 @@ class WrappedLoader(object):
                 tex.setFormat(tex_format)
                 model.setTexture(tex_stage, tex, 1)
 
+    def setTextureInputsRecursive(self, model):
+        for child in model.get_children():
+            self.setTextureInputs(child)
+            self.setTextureInputsRecursive(child)
+
     def setTextureInputs(self, model):
         #print ('Fixing model', model)
         slots_filled = set()
@@ -862,7 +867,7 @@ class WrappedLoader(object):
         # (eg. slot0 is diffuse/color)
         for slot, tex_stage in enumerate(model.findAllTextureStages()):
             if slot >= len(self.texture_shader_inputs):
-                break
+                slot=0
             tex = model.findTexture(tex_stage)
             if tex:
                 #print('Found tex:', tex.getFilename())
