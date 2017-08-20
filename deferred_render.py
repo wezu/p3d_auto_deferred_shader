@@ -917,7 +917,7 @@ class WrappedLoader(object):
 
         if self.use_srgb:
             self.fixSrgbTextures(model)
-        self.setTextureInputs(model)
+        self.setTextureInputsRecursive(model)
         self.fix_transparency(model)
         return model
 
