@@ -2,37 +2,35 @@
 #version 140
 // This parameters should be configured according to Far and Near plane
 // of your main camera
-const float zFar = 500.0;
+const float zFar = 200.0;
 const float zNear = 1.0;
-const float maxDelta = 0.005;   // Delta depth test value
-const float rayLength =0.001;   // 0..1 Ray length (percent of zFar)
-const int stepsCount = 8;      // Quality. With too match value may
+//const float maxDelta = 0.01;   // Delta depth test value
+//const float rayLength =0.02;   // 0..1 Ray length (percent of zFar)
+//const int stepsCount = 16;      // Quality. With too match value may
                                 // be problem on non-nvidia cards
 
-const float fade = 1.0;         // Fade out reflection
+//const float fade = 0.7;         // Fade out reflection
 
 in vec2 uv;
 
 uniform sampler2D normal_tex;
 uniform sampler2D depth_tex;
 uniform sampler2D final_light;
+uniform samplerCube cube_tex;
 uniform mat4 trans_apiclip_of_camera_to_apiview_of_camera;
 uniform mat4 trans_apiview_of_camera_to_apiclip_of_camera;
+uniform mat4 trans_apiview_of_camera_to_world;
+
+
+//uniform float maxDelta;
+//uniform float rayLength;
+
 
 // For each component of v, returns -1 if the component is < 0, else 1
 vec2 sign_not_zero(vec2 v)
     {
     // Version with branches (for GLSL < 4.00)
     return vec2(v.x >= 0 ? 1.0 : -1.0, v.y >= 0 ? 1.0 : -1.0);
-    }
-
-// Packs a 3-component normal to 2 channels using octahedron normals
-vec2 pack_normal_octahedron(vec3 v)
-    {
-    // Faster version using newer GLSL capatibilities
-    v.xy /= dot(abs(v), vec3(1.0));
-    // Branch-Less version
-    return mix(v.xy, (1.0 - abs(v.yx)) * sign_not_zero(v.xy), step(v.z, 0.0));
     }
 
 
@@ -76,7 +74,7 @@ vec4 raytrace(vec3 startPos,
     float currentDepthSS = 0.0;     // current depth calculated with reflection vector in screen space
     float currentDepth = 0.0;       // current depth calculated with reflection vector
     float deltaD = 0.0;
-    vec4 color = vec4(0.0, 0.0, 0.0, 0.0);
+    vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
     for (int i = 1; i < stepsCount; i++)
         {
         samplePos = (startPosSS.xy + vectorSS.xy*i);
@@ -88,40 +86,71 @@ vec4 raytrace(vec3 startPos,
             {
             color = texture(albedo, samplePos);
             //color=vec4(vectorSS*100.0, 0.0);
-            //color *= fade * (1.0 - float(i) / float(stepsCount));
+            float f=fade * (1.0 - float(i) / float(stepsCount));
+            //color *= f;
+            color.a=1.0-f;
             break;
             }
         }
     return color;
     }
 
-
+vec3 getPosition(vec2 uv)
+    {
+    float depth=texture(depth_tex,uv).r * 2.0 - 1.0;
+    vec4 view_pos = trans_apiclip_of_camera_to_apiview_of_camera * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
+    view_pos.xyz /= view_pos.w;
+    return view_pos.xyz;
+    }
 
 void main()
     {
     //float gloss = texture(color_tex, uv).a;
     //view space normal, it's a floating point tex,
     //normalized before writing, ready to use
-    vec4 normal_map= texture(normal_tex, uv);
-    float gloss=normal_map.a;
-    vec3 N = unpack_normal_octahedron(normal_map.xy);
-    //hardware depth
-    float D = texture(depth_tex, uv).r;
+    vec4 normal_roughness_metallic=texture(normal_tex,uv);
+    if (normal_roughness_metallic.rb == vec2(0.0))
+        gl_FragData[0] =vec4(0.0, 0.0, 0.0, 1.0);
+    else
+        {
+        if (normal_roughness_metallic.a > 0.0)
+            {
+            //float gloss=normal_map.a;
+            vec3 N = unpack_normal_octahedron(normal_roughness_metallic.xy);
+            //hardware depth
+            float D = texture(depth_tex, uv).r;
 
-    //view pos in camera space
-    vec4 P = trans_apiclip_of_camera_to_apiview_of_camera * vec4( uv.xy,  D, 1.0);
-    P.xyz /= P.w;
-    //view direction
-    vec3 V = normalize(P.xyz);
-    // Reflection vector in camera space
-    vec3 R = normalize(reflect(V, N)) * zFar * rayLength;
+            //view pos in camera space
+            vec4 P = trans_apiclip_of_camera_to_apiview_of_camera * vec4( uv.xy,  D, 1.0);
+            P.xyz /= P.w;
+            //view direction
+            vec3 V = normalize(P.xyz);
+            // Reflection vector in camera space
+            vec3 R = normalize(reflect(V, N)) * zFar * rayLength;
 
-    float co=abs(dot(-V, N));
-    vec4 final=raytrace(P.xyz, P.xyz + R,
-                       trans_apiview_of_camera_to_apiclip_of_camera,
-                       final_light, depth_tex);
+            //float co=abs(dot(-V, N));
+            vec4 traced=raytrace(P.xyz, P.xyz + R,
+                               trans_apiview_of_camera_to_apiclip_of_camera,
+                               final_light, depth_tex);
 
-    gl_FragData[0] =final*co*gloss;
-    //gl_FragData[0] =vec4(co,co,co, 1.0);
+
+            //direction towards they eye (camera) in the view (eye) space
+            vec3 ecEyeDir = normalize(-getPosition(uv.xy));
+            //direction towards the camera in the world space
+            vec3 wcEyeDir = vec3(trans_apiview_of_camera_to_world * vec4(ecEyeDir, 0.0));
+            //surface normal in the world space
+            vec3 wcNormal = vec3(trans_apiview_of_camera_to_world * vec4(N, 0.0));
+            //reflection vector in the world space. We negate wcEyeDir as the reflect function expect incident vector pointing towards the surface
+            vec3 reflectionWorld = reflect(-wcEyeDir, normalize(wcNormal));
+
+            vec4 cube_reflection=texture(cube_tex, reflectionWorld);
+            vec3 final=mix(traced.rgb, cube_reflection.rgb, traced.a);
+
+            gl_FragData[0] =vec4(final, 1.0);
+            }
+        else
+            gl_FragData[0] =vec4(0.0, 0.0, 0.0, 1.0);
+        }
+
     }
 

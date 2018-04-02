@@ -11,7 +11,7 @@ uniform sampler2D tex_diffuse; //rgba color texture
 #ifndef DISABLE_NORMALMAP
 uniform sampler2D tex_normal; //rgba normal+gloss texture
 #endif
-uniform sampler2D tex_shga; //Shine Height Gloss Alpha
+uniform sampler2D tex_material; //rgma
 
 // For each component of v, returns -1 if the component is < 0, else 1
 vec2 sign_not_zero(vec2 v)
@@ -50,7 +50,7 @@ vec2 occlusionPallaxMapping(vec3 v, vec2 t)
 {
     int     nMaxSamples         = 30;
     int     nMinSamples         = 10;
-    float   fHeightMapScale     = 0.006;
+    float   fHeightMapScale     = 0.06;
     int nNumSamples = int(mix(nMaxSamples, nMinSamples, abs(dot(vec3(0.0,0.0,1.0), v))));
     // height of each layer
     float fStepSize = 1.0 / float(nNumSamples);
@@ -77,7 +77,7 @@ vec2 occlusionPallaxMapping(vec3 v, vec2 t)
         // Sample the heightmap at the current texcoord offset.  The heightmap
         // is stored in the alpha channel of the height/normal map.
         //fCurrSampledHeight = tex2Dgrad( NH_Sampler, IN.texcoord + vCurrOffset, dx, dy ).a;
-        fCurrSampledHeight = 1.0-textureGrad(tex_shga, UV + vCurrOffset, dx, dy).g;
+        fCurrSampledHeight = 1.0-textureGrad(tex_normal, UV + vCurrOffset, dx, dy).a;
         // Test if the view ray has intersected the surface.
         if (fCurrSampledHeight > fCurrRayHeight)
         {
@@ -119,14 +119,14 @@ void main()
     vec3 ts_v = normalize(TS_V);
     vec3 n=normalize(N);
     #ifndef DISABLE_POM
-    vec2 final_uv=occlusionPallaxMapping(ts_v, UV);
+        vec2 final_uv=occlusionPallaxMapping(ts_v, UV);
     #endif
     #ifdef DISABLE_POM
-    vec2 final_uv=UV;
+        vec2 final_uv=UV;
     #endif
 
-    vec4 shga_map=texture(tex_shga,final_uv);
-    if (shga_map.a <0.5)
+    vec4 rgma_map=texture(tex_material,final_uv);
+    if (rgma_map.a <0.5)
         discard;
 
     vec4 color_map=texture(tex_diffuse,final_uv);
@@ -139,9 +139,14 @@ void main()
     n+=B*normal.y;
     n=normalize(n);
     #endif
-    float shine=shga_map.r;
-    float glow=shga_map.b;
+    //float shine=shga_map.r;
+    //float shine=clamp((normal_map.a-0.1)*2.0, 0.0, 1.0);
+    //float glow=shga_map.b;
+    float roughness=rgma_map.r;
+    float glow=rgma_map.g;
+    float metallic=rgma_map.b;
 
-    gl_FragData[0]=vec4(color_map.rgb, 1.0);
-    gl_FragData[1]=vec4(pack_normal_octahedron(n.xyz), glow, shine);
+    gl_FragData[0]=vec4(color_map.rgb, glow);
+    //gl_FragData[0]=vec4(1.0, 1.0, 1.0, 1.0);
+    gl_FragData[1]=vec4(pack_normal_octahedron(n.xyz), roughness, metallic);
     }

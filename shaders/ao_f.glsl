@@ -55,7 +55,9 @@ void main()
   //occlusion *= 0.125;// 1/num_samples
   //occlusion=1.0-occlusion;
   //occlusion=0.5+occlusion*0.5;
+   // occlusion=1.0-pow(pixel_depth*0.1, 2.0);
 
   gl_FragData[0]= vec4(1.0-occlusion*0.125*amount, 0.0, 0.0, 0.0);
+  //gl_FragData[0]= vec4(occlusion, 0.0, 0.0, 0.0);
 }
 

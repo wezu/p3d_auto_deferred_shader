@@ -37,16 +37,6 @@ vec2 sign_not_zero(vec2 v)
     return vec2(v.x >= 0 ? 1.0 : -1.0, v.y >= 0 ? 1.0 : -1.0);
     }
 
-// Packs a 3-component normal to 2 channels using octahedron normals
-vec2 pack_normal_octahedron(vec3 v)
-    {
-    // Faster version using newer GLSL capatibilities
-    v.xy /= dot(abs(v), vec3(1.0));
-    // Branch-Less version
-    return mix(v.xy, (1.0 - abs(v.yx)) * sign_not_zero(v.xy), step(v.z, 0.0));
-    }
-
-
 // Unpacking from octahedron normals, input is the output from pack_normal_octahedron
 vec3 unpack_normal_octahedron(vec2 packed_nrm)
     {
@@ -76,50 +66,73 @@ vec4 blur_tex(sampler2D tex, vec2 uv, float blur)
     return out_tex;
     }
 
+vec3 getPosition(vec2 uv, float depth)
+    {
+    vec4 view_pos = p3d_ProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
+    view_pos.xyz /= view_pos.w;
+    return view_pos.xyz;
+    }
+
+vec3 do_specular(float roughness, vec3 tint,
+                 float metallic, float NdotH,
+                 float gloss, float base_roughness)
+    {
+    return mix(vec3(1.0-roughness), tint, metallic) * pow(NdotH, gloss)*(1.0-base_roughness+metallic);
+    }
 
 void main()
     {
-    vec3 color=vec3(0.0, 0.0, 0.0);
     vec2 win_size=textureSize(depth_tex, 0).xy;
     vec2 uv=gl_FragCoord.xy/win_size;
 
     vec4 color_tex=texture(albedo_tex, uv);
     vec3 albedo=color_tex.rgb;
-    vec4 normal_glow_gloss=texture(normal_tex,uv);
-    vec3 normal=unpack_normal_octahedron(normal_glow_gloss.xy);
-    float gloss=normal_glow_gloss.a;
-    float glow=normal_glow_gloss.b;
+    vec4 normal_roughness_metallic=texture(normal_tex,uv);
+    vec3 N=unpack_normal_octahedron(normal_roughness_metallic.xy);
+    float roughness =pow(normal_roughness_metallic.b, 0.5);
+    float base_roughness =normal_roughness_metallic.b;
+    float metallic=normal_roughness_metallic.a;
+    float gloss=350.0*(1.0-roughness);
+    vec3 glow=albedo*color_tex.a;
+    albedo =mix(albedo, vec3(0.0), metallic);
     float depth=texture(depth_tex,uv).r * 2.0 - 1.0;
 
-    //vec4 light_view_pos=spot.position;
+    vec3 view_pos =getPosition(uv, depth);
 
-    vec4 view_pos = p3d_ProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
-    view_pos.xyz /= view_pos.w;
+    vec3 color=vec3(0.0);
+    vec3 spec=vec3(0.0);
+    vec3 L=normalize(spot.position.xyz-view_pos.xyz);
+    vec3 V=normalize(-view_pos.xyz);
+    vec3 H = normalize(V+L);
+    float NdotH= max(0.0,dot( N, H));
+    float NdotL=max(0.0,dot( N, L));
 
-    //vec3 light_vec = -normalize(spot.spotDirection);
-    vec3 light_vec = normalize(spot.position.xyz-view_pos.xyz);
-
-    //diffuse
-    float attenuation=1.0-(pow(distance(view_pos.xyz, spot.position.xyz)/light_radius*1.1, 2.0));
-    float spotEffect = dot(normalize(spot.spotDirection), -light_vec);
+    vec3 light_color=spot.color.rgb;
+    float attenuation=1.0-(pow(distance(view_pos.xyz, spot.position.xyz)/light_radius*1.1, 4.0));
+    float spotEffect = dot(normalize(spot.spotDirection), -L);
     float falloff=0.0;
     if (spotEffect > spot.spotCosCutoff)
-      falloff = pow(spotEffect, 80.0);
+      falloff = pow(spotEffect,spot.spotExponent);
     attenuation*=falloff;
 
-    color+=spot.color.rgb*max(dot(normal.xyz,light_vec), 0.0)*attenuation;
-    //spec
-    vec3 view_vec = normalize(-view_pos.xyz);
-    vec3 reflect_vec=normalize(reflect(light_vec,normal.xyz));
-    float spec=pow(max(dot(reflect_vec, -view_vec), 0.0), 100.0*gloss)*gloss*attenuation;
+    //diffuse
+    color+=light_color*NdotL*attenuation;
+    //specular
+    spec=do_specular(roughness, color_tex.rgb, metallic, NdotH, gloss, base_roughness)*light_color*attenuation;
 
-    vec4 final=vec4((color*albedo)+spot.color.rgb*spec, spec+gloss);
+    float bloom = dot(spec, vec3(1.0))*0.33*0.5;
+    vec4 final=vec4((color*albedo)+spec, bloom);
 
     //shadows
     //vec4 pos = p3d_ViewProjectionMatrixInverse * vec4( uv.xy * 2.0 - vec2(1.0), depth, 1.0);
-   // vec4 shadow_uv=trans_render_to_clip_of_spot*pos;
+    //vec4 shadow_uv=trans_render_to_clip_of_spot*pos;
     //shadow_uv.xyz=shadow_uv.xyz/shadow_uv.w*0.5+0.5;
+    //#ifdef DISABLE_SOFTSHADOW
     //float shadow= float(texture(spot.shadowMap, shadow_uv.xy).r >= shadow_uv.z+bias);
+    //#endif
+    //#ifndef DISABLE_SOFTSHADOW
+    //float shadow= soft_shadow(spot.shadowMap, shadow_uv.xy+vec2(0.0, 0.005), shadow_uv.z, bias, 0.003*attenuation);
+    //#endif
     //final*=shadow;
 
     gl_FragData[0]=final;

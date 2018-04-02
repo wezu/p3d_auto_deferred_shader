@@ -2,21 +2,23 @@
 #version 140
 uniform sampler2D final_light;
 uniform sampler2D normal_tex;
-uniform float glow_power;
+uniform float power;
+uniform float desat;
+uniform float scale;
 
 in vec2 uv;
+
+vec3 desaturate(vec3 input_color, float amount)
+    {
+    vec3 gray = vec3(dot(input_color, vec3(0.3, 0.59, 0.11)));
+    return mix(input_color, gray, amount);
+    }
+
 
 void main()
     {
     vec4 color=texture(final_light, uv);
-    float glow=texture(normal_tex, uv).b;
-    float gloss= color.a;
-
-    vec3 final_color=color.xyz*glow+pow(color.xyz*glow, vec3(4.0));
-    final_color*=glow_power;
-
-    final_color+=clamp((color.xyz-0.2)*2.0, 0.0, 1.0)*gloss;
-
+    vec3 final_color=desaturate(color.rgb, desat)*pow(color.a*scale, power);
     gl_FragData[0] = vec4(final_color, 1.0);
     }
 

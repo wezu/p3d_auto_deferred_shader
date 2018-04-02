@@ -1,20 +1,16 @@
-from __future__ import print_function
 import sys
 import math
-#from functools import lru_cache
 from direct.showbase.DirectObject import DirectObject
 from panda3d.core import *
 if sys.version_info >= (3, 0):
-    print ("I'm on python 3.x!")
     import builtins
-    basestring = str
 else:
     import __builtin__ as builtins
 
 __author__ = "wezu"
-__copyright__ = "Copyright 2017"
+__copyright__ = "Copyright 2017-2018"
 __license__ = "ISC"
-__version__ = "0.11"
+__version__ = "0.21"
 __email__ = "wezu.dev@gmail.com"
 __all__ = ['SphereLight', 'ConeLight', 'SceneLight', 'DeferredRenderer']
 
@@ -26,7 +22,7 @@ class DeferredRenderer(DirectObject):
     it also creates a deferred_render and forward_render nodes.
     """
 
-    def __init__(self, preset='medium', filter_setup=None, shading_setup=None, shadows=None, scene_mask=1, light_mask=2):
+    def __init__(self, filter_setup=None, shading_setup=None, shadows=None, scene_mask=1, light_mask=2):
         # check if there are other DeferredRenderer in buildins
         if hasattr(builtins, 'deferred_renderer'):
             raise RuntimeError('There can only be one DeferredRenderer')
@@ -41,7 +37,7 @@ class DeferredRenderer(DirectObject):
         self.last_window_size = (base.win.get_x_size(), base.win.get_y_size())
 
         self.shadow_size=shadows
-
+        self.attached_lights={}
         self.modelMask = scene_mask
         self.lightMask = light_mask
 
@@ -53,160 +49,53 @@ class DeferredRenderer(DirectObject):
                                         {'input_name': 'tex_normal',
                                          'stage_modes': (TextureStage.M_normal, TextureStage.M_normal_height, TextureStage.M_normal_gloss),
                                          'default_texture': loader.load_texture('tex/def_normal.png')},
-                                        {'input_name': 'tex_shga',  # Shine Height Alpha Glow
+                                        {'input_name': 'tex_material',  # Shine Height Alpha Glow
                                          # something different
                                          'stage_modes': (TextureStage.M_selector,),
-                                         'default_texture': loader.load_texture('tex/def_shga.png')}]
-
-        self.shading_preset = {'custom':{},
-                               'full': {},
-                               'medium': {'DISABLE_POM': 1, 'DISABLE_SOFTSHADOW':1},
-                               'minimal': {'DISABLE_POM': 1, 'DISABLE_SOFTSHADOW':1, 'DISABLE_NORMALMAP': 1}
-                               }
+                                         'default_texture': loader.load_texture('tex/def_material.png')}]
         # set up the deferred rendering buffers
-        if shading_setup is not None:
-            self.shading_setup = shading_setup
-        else:
-            self.shading_setup = self.shading_preset[preset]
-
+        self.shading_setup = shading_setup
         self._setup_g_buffer(self.shading_setup)
-
-        self.preset = {'custom': [{'shader': 'ao',
-                                 'inputs': {'random_tex': 'tex/noise.png',
-                                             'sample_rad' : 0.02,
-                                             'strength' : 0.1,
-                                             'falloff' : 0.9,
-                                             'amount' : 1.0}},
-                                {'name': 'final_light', 'shader': 'dir_light',
-                                 'define': {'HALFLAMBERT': 2.0},
-                                 'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
-                                {'shader': 'bloom',
-                                 'size': 0.5,
-                                 'inputs': {'glow_power': 2.0}},
-                                {'name': 'bloom_blur', 'shader': 'blur',
-                                'translate_tex_name' :{ 'bloom': 'input_tex'},
-                                 'inputs': {'blur': 3.0},
-                                 'size': 0.5},
-                                {'name': 'pre_aa', 'shader': 'mix',
-                                 'translate_tex_name': {'final_light': 'final_color'},
-                                 'define': {'DISABLE_SSR': 1},
-                                 'inputs': {'lut_tex': 'tex/lut_v1.png',
-                                            'noise_tex': 'tex/noise.png'}},
-                                {'shader': 'fxaa',
-                                 'inputs': {'span_max': 2.0,
-                                            'reduce_mul': float(1.0 / 16.0),
-                                            'subpix_shift': float(1.0 / 8.0)}}
-                                ],
-                      'full': [{'shader': 'ao',
-                                 'inputs': {'random_tex': 'tex/noise.png',
-                                             'sample_rad' : 0.02,
-                                             'strength' : 0.1,
-                                             'falloff' : 0.9,
-                                             'amount' : 1.0}},
-                                {'name': 'final_light', 'shader': 'dir_light',
-                                 'define': {'HALFLAMBERT': 2.0},
-                                 'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
-                                {'shader': 'fog',
-                                 'inputs': {'fog_color': Vec4(0.0, 0.0, 0.0, 0.0),
-                                            # start, stop, power, mix
-                                            'fog_config': Vec4(25.0, 600.0, 2.0, 1.0),
-                                            'dof_near': 3.0,  # 0.0..1.0 not distance!
-                                            'dof_far': 55.0}},  # distance in units to full blur
-                                {'shader': 'ssr', 'inputs': {}},
-                                {'shader': 'bloom',
-                                 'size': 0.5,
-                                 'inputs': {'glow_power': 2.0}},
-                                {'name': 'bloom_blur', 'shader': 'blur',
-                                 'translate_tex_name' :{ 'bloom': 'input_tex'},
-                                 'inputs': {'blur': 4.0},
-                                 'size': 0.5},
-                                {'name': 'compose', 'shader': 'mix',
-                                 'translate_tex_name': {'fog': 'final_color'},
-                                 'inputs': {'lut_tex': 'tex/lut_v1.png',
-                                            'noise_tex': 'tex/noise.png'}},
-                                {'name': 'pre_aa', 'shader': 'dof',
-                                 'inputs': {'blur': 4.0}},
-                                {'shader': 'fxaa',
-                                 'inputs': {'span_max': 2.0,
-                                            'reduce_mul': float(1.0 / 16.0),
-                                            'subpix_shift': float(1.0 / 8.0)}}
-                                ],
-                       'minimal': [{'name': 'final_light', 'shader': 'dir_light',
-                                    'define': {'HALFLAMBERT': 2.0},
-                                    'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
-                                   {'name': 'compose', 'shader': 'mix',
-                                    'translate_tex_name': {'final_light': 'final_color'},
-                                    'define': {'DISABLE_SSR': 1,
-                                               'DISABLE_AO': 1,
-                                               'DISABLE_BLOOM': 1,
-                                               'DISABLE_LUT': 1,
-                                               'DISABLE_DITHERING': 1},
-                                    'inputs': {'lut_tex': 'tex/lut_v1.png',
-                                               'noise_tex': 'tex/noise.png'}},
-                                   {'shader': 'fxaa',
-                                    'translate_tex_name': {'compose': 'pre_aa'},
-                                    'inputs': {'span_max': 2.0,
-                                               'reduce_mul': float(1.0 / 16.0),
-                                               'subpix_shift': float(1.0 / 8.0)}}
-                                   ],
-                       'medium': [{'shader': 'ao', 'size': 0.5,
-                                   'inputs': {'random_tex': 'tex/noise.png',
-                                             'sample_rad' : 0.02,
-                                             'strength' : 0.1,
-                                             'falloff' : 0.9,
-                                             'amount' : 1.0}},
-                                  {'name': 'final_light', 'shader': 'dir_light',
-                                   'define': {'HALFLAMBERT': 2.0},
-                                   'inputs': {'light_color': Vec3(0, 0, 0), 'direction': Vec3(0, 0, 0)}},
-                                  {'shader': 'fog',
-                                   'inputs': {'fog_color': Vec4(0.1, 0.1, 0.1, 0.0),
-                                              # start, stop, power, mix
-                                              'fog_config': Vec4(1.0, 100.0, 2.0, 1.0),
-                                              'dof_near': 0.5,  # 0.0..1.0 not distance!
-                                              'dof_far': 60.0}},  # distance in units to full blur
-                                  {'shader': 'bloom',
-                                   'size': 0.5,
-                                   'inputs': {'glow_power': 5.0}},
-                                  {'name': 'bloom_blur', 'shader': 'blur',
-                                   'inputs': {'blur': 3.0},
-                                   'size': 0.5},
-                                  {'name': 'compose', 'shader': 'mix',
-                                   'translate_tex_name': {'fog': 'final_color'},
-                                   'define': {'DISABLE_SSR': 1},
-                                   'inputs': {'lut_tex': 'tex/lut_v1.png',
-                                              'noise_tex': 'tex/noise.png'}},
-                                  {'shader': 'fxaa',
-                                   'translate_tex_name': {'compose': 'pre_aa'},
-                                   'inputs': {'span_max': 2.0,
-                                              'reduce_mul': float(1.0 / 16.0),
-                                              'subpix_shift': float(1.0 / 8.0)}}
-                                  ]
-                       }
 
         # post process
         self.filter_buff = {}
         self.filter_quad = {}
         self.filter_tex = {}
         self.filter_cam = {}
+
+
+        self.cube_tex=loader.load_cube_map('tex/cube/skybox_#.png')
+        tex_format=self.cube_tex.get_format()
+        if tex_format == Texture.F_rgb:
+            tex_format = Texture.F_srgb
+        elif tex_format == Texture.F_rgba:
+            tex_format = Texture.F_srgb_alpha
+        self.cube_tex.set_format(tex_format)
+        self.cube_tex.set_magfilter(SamplerState.FT_linear_mipmap_linear )
+        self.cube_tex.set_minfilter(SamplerState.FT_linear_mipmap_linear)
+
         self.common_inputs = {'render': render,
                               'camera': base.cam,
                               'depth_tex': self.depth,
                               'normal_tex': self.normal,
                               'albedo_tex': self.albedo,
                               'lit_tex': self.lit_tex,
-                              'forward_tex': self.plain_tex}
-        if filter_setup:
-            self.filter_stages = filter_setup
-        else:
-            self.filter_stages = self.preset[preset]
+                              'forward_tex': self.plain_tex,
+                              'forward_aux_tex': self.plain_aux,
+                              'cube_tex': self.cube_tex}
 
-        for stage in self.filter_stages[:-1]:
+        self.filter_stages = filter_setup
+
+        for stage in self.filter_stages:
             self.add_filter(**stage)
         for name, tex in self.filter_tex.items():
             self.common_inputs[name] = tex
-        for name, value in self.common_inputs.items():
-            for filter_name, quad in self.filter_quad.items():
-                quad.set_shader_input(name, value)
+        for filter_name, quad in self.filter_quad.items():
+            try:
+                quad.set_shader_inputs(**self.common_inputs)
+            except AttributeError:
+                for name, value in self.common_inputs.items():
+                    quad.set_shader_input(name, value)
 
         # stick the last stage quad to render2d
         # this is a bit ugly...
@@ -222,7 +111,47 @@ class DeferredRenderer(DirectObject):
         # window
         self.accept("window-event", self._on_window_event)
         # update task
-        taskMgr.add(self._update, '_update_tsk', sort=5)
+        taskMgr.add(self._update, '_update_tsk', sort=-150)
+
+    def save_screenshot(self, name='screen', extension='png'):
+        if 'name' in self.filter_stages[-1]:
+            last_stage = self.filter_stages[-1]['name']
+        else:
+            last_stage = self.filter_stages[-1]['shader']
+        tex=self.filter_tex[last_stage]
+        base.graphicsEngine.extract_texture_data(tex, base.win.getGsg())
+        #base.graphicsEngine.renderFrame()
+        tex.write(name+'.'+extension)
+        print('Screen saved to:', name+'.'+extension)
+
+    def set_cubemap(self, cubemap):
+        self.cube_tex=loader.load_cube_map(cubemap)
+        tex_format=self.cube_tex.get_format()
+        if tex_format == Texture.F_rgb:
+            tex_format = Texture.F_srgb
+        elif tex_format == Texture.F_rgba:
+            tex_format = Texture.F_srgb_alpha
+        self.cube_tex.set_format(tex_format)
+        self.cube_tex.set_magfilter(SamplerState.FT_linear_mipmap_linear )
+        self.cube_tex.set_minfilter(SamplerState.FT_linear_mipmap_linear)
+        self.common_inputs['cube_tex']= self.cube_tex
+        for quad in self.filter_quad.values():
+            quad.set_shader_input('cube_tex', self.cube_tex)
+
+
+    def set_material(self, node, roughness, metallic, glow, alpha=1.0):
+        image = PNMImage(x_size=32, y_size=32, num_channels=4)
+        image.fill(roughness, glow, metallic)
+        image.alpha_fill(alpha)
+        tex=Texture()
+        tex.load(image)
+        node.set_shader_input('tex_material',tex, 1)
+
+    def set_near_far(self, near, far):
+        base.cam.node().get_lens().set_near_far(near, far)
+        lens = base.cam.node().get_lens()
+        self.modelcam.node().set_lens(lens)
+        self.lightcam.node().set_lens(lens)
 
     def reset_filters(self, filter_setup, shading_setup=None):
         """
@@ -258,13 +187,16 @@ class DeferredRenderer(DirectObject):
         self.filter_tex = {}
         self.filter_cam = {}
         self.filter_stages = filter_setup
-        for stage in self.filter_stages[:-1]:
+        for stage in self.filter_stages:
             self.add_filter(**stage)
         for name, tex in self.filter_tex.items():
             self.common_inputs[name] = tex
-        for name, value in self.common_inputs.items():
-            for filter_name, quad in self.filter_quad.items():
-                quad.set_shader_input(name, value)
+        for filter_name, quad in self.filter_quad.items():
+            try:
+                quad.set_shader_inputs(**self.common_inputs)
+            except AttributeError:
+                for name, value in self.common_inputs.items():
+                    quad.set_shader_input(name, value)
         # stick the last stage quad to render2d
         # this is a bit ugly...
         if 'name' in self.filter_stages[-1]:
@@ -284,12 +216,19 @@ class DeferredRenderer(DirectObject):
 
         if shading_setup != self.shading_setup:
             self.light_root.set_shader(loader.load_shader_GLSL(
-                self.v.format('light'), self.f.format('light'), shading_setup))
+                self.v.format('point_light'), self.f.format('point_light'), shading_setup))
             self.geometry_root.set_shader(loader.load_shader_GLSL(
                 self.v.format('geometry'), self.f.format('geometry'), shading_setup))
             self.plain_root.set_shader(loader.load_shader_GLSL(
                 self.v.format('forward'), self.f.format('forward'), shading_setup))
             self.shading_setup=shading_setup
+
+        size=1
+        if 'FORWARD_SIZE' in self.shading_setup:
+            size= self.shading_setup['FORWARD_SIZE']
+        window_size = (base.win.get_x_size(), base.win.get_y_size())
+        self.plain_buff.set_size(int(window_size[0]*size), int(window_size[1]*size))
+
 
     def reload_filter(self, stage_name):
         """
@@ -306,11 +245,17 @@ class DeferredRenderer(DirectObject):
         self.filter_quad[stage_name].set_shader(loader.load_shader_GLSL(
             self.v.format(shader), self.f.format(shader), define))
         for name, value in inputs.items():
-            if isinstance(value, basestring):
+            if isinstance(value, str):
                 value = loader.load_texture(value)
-            self.filter_quad[stage_name].set_shader_input(str(name), value)
-        for name, value in self.common_inputs.items():
-            self.filter_quad[stage_name].set_shader_input(name, value)
+                inputs[name]=value
+        #inputs={**inputs, **self.common_inputs} #works on py3 only :(
+        inputs.update(self.common_inputs)
+        try:
+            self.filter_quad[stage_name].set_shader_inputs(**inputs)
+        except AttributeError:
+            for name, value in inputs.items():
+                self.filter_quad[stage_name].set_shader_input(name, value)
+
         if 'translate_tex_name' in self.filter_stages[id]:
             for old_name, new_name in self.filter_stages[id]['translate_tex_name'].items():
                 value = self.filter_tex[old_name]
@@ -382,7 +327,7 @@ class DeferredRenderer(DirectObject):
                 value = modify_using(self.filter_stages[id][
                                      'inputs'][name], value)
                 self.filter_stages[id]['inputs'][name] = value
-            if isinstance(value, basestring):
+            if isinstance(value, str):
                 tex = loader.load_texture(value, sRgb='srgb'in value)
                 if 'nearest' in value:
                     tex.set_magfilter(SamplerState.FT_nearest)
@@ -395,12 +340,6 @@ class DeferredRenderer(DirectObject):
                 value=tex
             self.filter_quad[stage_name].set_shader_input(str(name), value)
             # print(stage_name, name, value)
-
-    def set_near_far(self, near, far):
-        base.cam.node().get_lens().set_near_far(near, far)
-        lens = base.cam.node().get_lens()
-        self.modelcam.node().set_lens(lens)
-        self.lightcam.node().set_lens(lens)
 
     def _setup_g_buffer(self, define=None):
         """
@@ -417,9 +356,13 @@ class DeferredRenderer(DirectObject):
         self.depth.set_format(Texture.F_depth_component32)
         self.depth.set_component_type(Texture.T_float)
         self.albedo = Texture()
+        self.albedo.set_wrap_u(Texture.WM_clamp)
+        self.albedo.set_wrap_v(Texture.WM_clamp)
         self.normal = Texture()
         self.normal.set_format(Texture.F_rgba16)
         self.normal.set_component_type(Texture.T_float)
+        #self.normal.set_magfilter(SamplerState.FT_linear)
+        #self.normal.set_minfilter(SamplerState.FT_linear_mipmap_linear)
         self.lit_tex = Texture()
         self.lit_tex.set_wrap_u(Texture.WM_clamp)
         self.lit_tex.set_wrap_v(Texture.WM_clamp)
@@ -432,12 +375,12 @@ class DeferredRenderer(DirectObject):
                                           bitplane=GraphicsOutput.RTPColor)
         self.modelbuffer.add_render_texture(tex=self.normal,
                                           mode=GraphicsOutput.RTMBindOrCopy,
-                                          bitplane=GraphicsOutput.RTPAuxRgba0)
+                                          bitplane=GraphicsOutput.RTP_aux_hrgba_0)
         self.lightbuffer.add_render_texture(tex=self.lit_tex,
                                           mode=GraphicsOutput.RTMBindOrCopy,
                                           bitplane=GraphicsOutput.RTPColor)
         # Set the near and far clipping planes.
-        base.cam.node().get_lens().set_near_far(3.0, 70.0)
+        base.cam.node().get_lens().set_near_far(2.0, 70.0)
         lens = base.cam.node().get_lens()
 
         # This algorithm uses three cameras: one to render the models into the
@@ -457,16 +400,16 @@ class DeferredRenderer(DirectObject):
                                         mask=BitMask32.bit(self.lightMask))
 
         # Panda's main camera is not used.
-        base.cam.node().setActive(0)
+        base.cam.node().set_active(0)
 
         # Take explicit control over the order in which the three
         # buffers are rendered.
-        self.modelbuffer.setSort(1)
-        self.lightbuffer.setSort(2)
-        base.win.setSort(3)
+        self.modelbuffer.set_sort(1)
+        self.lightbuffer.set_sort(2)
+        base.win.set_sort(3)
 
         # Within the light buffer, control the order of the two cams.
-        self.lightcam.node().get_display_region(0).setSort(1)
+        self.lightcam.node().get_display_region(0).set_sort(1)
 
         # By default, panda usually clears the screen before every
         # camera and before every window.  Tell it not to do that.
@@ -483,7 +426,7 @@ class DeferredRenderer(DirectObject):
         self.lightbuffer.set_clear_color_active(1)
         self.lightbuffer.set_clear_color((0, 0, 0, 0))
         self.modelbuffer.set_clear_color((0, 0, 0, 0))
-        self.modelbuffer.set_clear_active(GraphicsOutput.RTPAuxRgba0, True)
+        self.modelbuffer.set_clear_active(GraphicsOutput.RTP_aux_hrgba_0, True)
 
         render.set_state(RenderState.make_empty())
 
@@ -491,15 +434,21 @@ class DeferredRenderer(DirectObject):
         # root node and a list for the lights
         self.light_root = render.attach_new_node('light_root')
         self.light_root.set_shader(loader.load_shader_GLSL(
-            self.v.format('light'), self.f.format('light'), define))
-        self.light_root.set_shader_input("albedo_tex", self.albedo)
-        self.light_root.set_shader_input("depth_tex", self.depth)
-        self.light_root.set_shader_input("normal_tex", self.normal)
-        self.light_root.set_shader_input('win_size', Vec2(
-            base.win.get_x_size(), base.win.get_y_size()))
+            self.v.format('point_light'), self.f.format('point_light'), define))
         self.light_root.hide(BitMask32.bit(self.modelMask))
-        self.light_root.set_shader_input('camera', base.cam)
-        self.light_root.set_shader_input('render', render)
+        try:
+            self.light_root.set_shader_inputs(albedo_tex=self.albedo,
+                                          depth_tex=self.depth,
+                                          normal_tex=self.normal,
+                                          camera=base.cam,
+                                          render=render )
+        except AttributeError:
+            self.light_root.set_shader_input('albedo_tex', self.albedo)
+            self.light_root.set_shader_input('depth_tex',self.depth)
+            self.light_root.set_shader_input('normal_tex',self.normal)
+            self.light_root.set_shader_input('camera',base.cam)
+            self.light_root.set_shader_input('render',render )
+
         # self.light_root.hide(BitMask32(self.plainMask))
 
         self.geometry_root = render.attach_new_node('geometry_root')
@@ -508,12 +457,10 @@ class DeferredRenderer(DirectObject):
         self.geometry_root.hide(BitMask32.bit(self.lightMask))
         # self.geometry_root.hide(BitMask32(self.plainMask))
 
-        self.plain_root, self.plain_tex, self.plain_cam, self.plain_buff = self._make_forward_stage()
+        self.plain_root, self.plain_tex, self.plain_cam, self.plain_buff, self.plain_aux = self._make_forward_stage(define)
         self.plain_root.set_shader(loader.load_shader_GLSL(
             self.v.format('forward'), self.f.format('forward'), define))
         self.plain_root.set_shader_input("depth_tex", self.depth)
-        self.plain_root.set_shader_input('win_size', Vec2(
-            base.win.get_x_size(), base.win.get_y_size()))
         mask=BitMask32.bit(self.modelMask)
         #mask.set_bit(self.lightMask)
         self.plain_root.hide(mask)
@@ -534,9 +481,19 @@ class DeferredRenderer(DirectObject):
         if window is not None:
             window_size = (base.win.get_x_size(), base.win.get_y_size())
             if self.last_window_size != window_size:
+                lens = base.cam.node().get_lens()
+                lens.set_aspect_ratio(float(window_size[0])/float(window_size[1]))
+                self.modelcam.node().set_lens(lens)
+                self.lightcam.node().set_lens(lens)
+                self.plain_cam.node().set_lens(lens)
+
                 self.modelbuffer.set_size(window_size[0], window_size[1])
                 self.lightbuffer.set_size(window_size[0], window_size[1])
-                self.plain_buff.set_size(window_size[0]//2, window_size[1]//2)
+                #fix here!
+                size=1
+                if 'FORWARD_SIZE' in self.shading_setup:
+                    size= self.shading_setup['FORWARD_SIZE']
+                self.plain_buff.set_size(int(window_size[0]*size), int(window_size[1]*size))
                 for buff in self.filter_buff.values():
                     old_size = buff.get_fb_size()
                     x_factor = float(old_size[0]) / \
@@ -572,9 +529,16 @@ class DeferredRenderer(DirectObject):
         quad.set_shader(loader.load_shader_GLSL(self.v.format(
             shader), self.f.format(shader), define))
         for name, value in inputs.items():
-            if isinstance(value, basestring):
+            if isinstance(value, str):
                 value = loader.load_texture(value, sRgb=loader.use_srgb)
-            quad.set_shader_input(str(name), value)
+                inputs[name]=value
+        try:
+            quad.set_shader_inputs(**inputs)
+        except AttributeError:
+            for name, value in inputs.items():
+                quad.set_shader_input(name, value)
+
+
         if translate_tex_name:
             for old_name, new_name in translate_tex_name.items():
                 value = self.filter_tex[old_name]
@@ -606,7 +570,8 @@ class DeferredRenderer(DirectObject):
             base.win.get_gsg(), base.win)
         buff.add_render_texture(
             tex=tex, mode=GraphicsOutput.RTMBindOrCopy, bitplane=GraphicsOutput.RTPColor)
-        # buff.setSort(sort)
+        buff.set_sort(sort)
+        #print(name, sort)
         # buff.setSort(0)
         if clear_color is None:
             buff.set_clear_active(GraphicsOutput.RTPColor, False)
@@ -617,42 +582,70 @@ class DeferredRenderer(DirectObject):
         cam = base.make_camera(win=buff)
         cam.reparent_to(root)
         cam.set_pos(buff_size_x * 0.5, buff_size_y * 0.5, 100)
-        cam.setP(-90)
+        cam.set_p(-90)
         lens = OrthographicLens()
         lens.set_film_size(buff_size_x, buff_size_y)
         cam.node().set_lens(lens)
         # plane with the texture, a blank texture for now
         cm = CardMaker("plane")
-        cm.setFrame(0, buff_size_x, 0, buff_size_y)
+        cm.set_frame(0, buff_size_x, 0, buff_size_y)
         quad = root.attach_new_node(cm.generate())
         quad.look_at(0, 0, -1)
         quad.set_light_off()
+        '''Vertices=GeomVertexData('Triangle', GeomVertexFormat.getV3(), Geom.UHStatic)
+        Vertex=GeomVertexWriter(Vertices, 'vertex')
+        Vertex.addData3d(0.0,0.0,0.0)
+        Vertex.addData3d(0.0,0.0,0.0)
+        Vertex.addData3d(0.0,0.0,0.0)
+        Triangle = GeomTriangles(Geom.UHStatic)
+        Triangle.addVertices(0,1,2)
+        Triangle.closePrimitive()
+        Primitive=Geom(Vertices)
+        Primitive.addPrimitive(Triangle)
+        gNode=GeomNode('FullScreenTriangle')
+        gNode.addGeom(Primitive)
+        quad = NodePath(gNode)
+        quad.reparent_to(root)'''
+
         return quad, tex, buff, cam
 
-    def _make_forward_stage(self):
+    def _make_forward_stage(self, define):
         """
         Creates nodes, buffers and whatnot needed for forward rendering
         """
+        size=1
+        if 'FORWARD_SIZE' in define:
+            size= define['FORWARD_SIZE']
+
         root = NodePath("forwardRoot")
         tex = Texture()
         tex.set_wrap_u(Texture.WM_clamp)
         tex.set_wrap_v(Texture.WM_clamp)
-        buff_size_x = int(base.win.get_x_size()/2)
-        buff_size_y = int(base.win.get_y_size()/2)
+        aux_tex = Texture()
+        aux_tex.set_wrap_u(Texture.WM_clamp)
+        aux_tex.set_wrap_v(Texture.WM_clamp)
+        buff_size_x = int(base.win.get_x_size()*size)
+        buff_size_y = int(base.win.get_y_size()*size)
+
 
         winprops = WindowProperties()
         winprops.set_size(buff_size_x, buff_size_y)
         props = FrameBufferProperties()
         props.set_rgb_color(True)
         props.set_rgba_bits(8, 8, 8, 8)
+        props.set_srgb_color(True)
+        if 'FORWARD_AUX' in define:
+            props.set_aux_rgba(1)
         props.set_depth_bits(0)
         buff = base.graphicsEngine.make_output(
             base.pipe, 'forward_stage', 2,
             props, winprops,
             GraphicsPipe.BF_resizeable,
             base.win.get_gsg(), base.win)
-        buff.add_render_texture(
-            tex=tex, mode=GraphicsOutput.RTMBindOrCopy, bitplane=GraphicsOutput.RTPColor)
+        buff.add_render_texture(tex=tex, mode=GraphicsOutput.RTMBindOrCopy, bitplane=GraphicsOutput.RTPColor)
+        if 'FORWARD_AUX' in define:
+            buff.add_render_texture(tex=aux_tex,mode=GraphicsOutput.RTMBindOrCopy, bitplane=GraphicsOutput.RTPAuxRgba0)
+            buff.set_clear_active(GraphicsOutput.RTPAuxRgba0, True)
         buff.set_clear_color((0, 0, 0, 0))
         cam = base.make_camera(win=buff)
         cam.reparent_to(root)
@@ -661,17 +654,78 @@ class DeferredRenderer(DirectObject):
         mask = BitMask32.bit(self.modelMask)
         mask.set_bit(self.lightMask)
         cam.node().set_camera_mask(mask)
-        return root, tex, cam, buff
+        return root, tex, cam, buff, aux_tex
 
     def set_directional_light(self, color, direction, shadow_size=0):
         """
         Sets value for a directional light,
         use the SceneLight class to set the lights!
         """
-        self.filter_quad['final_light'].set_shader_input('light_color', color)
-        self.filter_quad['final_light'].set_shader_input('direction', direction)
 
-    def add_cone_light(self, color, pos=(0, 0, 0), hpr=(0, 0, 0), radius=1.0, fov=45.0, shadow_size=0.0):
+        try:
+            self.filter_quad['final_light'].set_shader_inputs(light_color=color, direction=direction)
+        except AttributeError:
+            self.filter_quad['final_light'].set_shader_input('light_color',color)
+            self.filter_quad['final_light'].set_shader_input('direction', direction)
+
+
+
+    def add_sun_light(self, color, offset=100.0, direction=(0,0,1), radius=1.0):
+        """
+        Creates a spotlight,
+        use the ConeLight class, not this function!
+        ..in fact don't use this at all, experimental/broken
+        """
+        #if fov > 179.0:
+        #    fov = 179.0
+        #xy_scale = math.tan(deg2Rad(fov * 0.5))
+        model = loader.load_model("models/sphere")
+        # temp=model.copyTo(self.plain_root)
+        # self.lights.append(model)
+        model.reparent_to(self.light_root)
+        #model.set_scale(xy_scale, 1.0, xy_scale)
+        #model.flatten_strong()
+        model.set_scale(radius*2.0)
+        #model.set_pos(pos)
+        #model.setHpr(hpr)
+        # debug=self.lights[-1].copyTo(self.plain_root)
+        model.set_attrib(DepthTestAttrib.make(RenderAttrib.MLess))
+        model.set_attrib(CullFaceAttrib.make(
+            CullFaceAttrib.MCullCounterClockwise))
+        model.set_attrib(ColorBlendAttrib.make(
+            ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
+        model.set_attrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
+
+        model.set_shader(loader.load_shader_GLSL(self.v.format(
+            'sun_light'), self.f.format('sun_light'), self.shading_setup))
+        p3d_light = deferred_render.attach_new_node(Spotlight("Spotlight"))
+        #p3d_light.set_pos(render, pos)
+        #p3d_light.set_hpr(render, hpr)
+        p3d_light.look_at(-Vec3(*direction))
+        p3d_light.set_y(p3d_light, -offset)
+        #p3d_light.set_x(render, -offset)
+        #p3d_light.node().set_exponent(20)
+        if self.shadow_size > 0.0:
+            p3d_light.node().set_shadow_caster(True, self.shadow_size, self.shadow_size)
+            model.set_shader(loader.load_shader_GLSL(self.v.format(
+            'sun_light'), self.f.format('sun_light_shadow'), self.shading_setup))
+        #p3d_light.node().set_camera_mask(self.modelMask)
+        try:
+            model.set_shader_inputs(spot=p3d_light,bias= 0.0003, direction=Vec3(*direction))
+        except AttributeError:
+            model.set_shader_input('spot', p3d_light)
+            model.set_shader_input('bias', 0.0003)
+            model.set_shader_input('direction',Vec3(*direction))
+        lens=OrthographicLens()
+        lens.set_near_far(200.0, 1000.0)
+        lens.set_film_size(1000, 1000)
+        p3d_light.node().set_lens(lens)
+        p3d_light.node().set_color(Vec4(color[0], color[1], color[2], 0.0))
+        #p3d_light.node().showFrustum()
+        return model, p3d_light
+
+    def add_cone_light(self, color, pos=(0, 0, 0), hpr=(0, 0, 0),exponent=40,
+                        radius=1.0, fov=45.0, shadow_size=0.0, bias=0.0005):
         """
         Creates a spotlight,
         use the ConeLight class, not this function!
@@ -687,7 +741,7 @@ class DeferredRenderer(DirectObject):
         model.flatten_strong()
         model.set_scale(radius)
         model.set_pos(pos)
-        model.setHpr(hpr)
+        model.set_hpr(hpr)
         # debug=self.lights[-1].copyTo(self.plain_root)
         model.set_attrib(DepthTestAttrib.make(RenderAttrib.MLess))
         model.set_attrib(CullFaceAttrib.make(
@@ -703,12 +757,12 @@ class DeferredRenderer(DirectObject):
         model.set_shader_input("light_fov", deg2Rad(fov))
         p3d_light = render.attach_new_node(Spotlight("Spotlight"))
         p3d_light.set_pos(render, pos)
-        p3d_light.setHpr(render, hpr)
-        p3d_light.node().set_exponent(20)
+        p3d_light.set_hpr(render, hpr)
+        p3d_light.node().set_exponent(exponent)
         p3d_light.node().set_color(Vec4(color, 1.0))
         if shadow_size > 0.0:
             p3d_light.node().set_shadow_caster(True, shadow_size, shadow_size)
-            model.set_shader_input("bias", 0.001)
+            model.set_shader_input("bias", bias)
             model.set_shader(loader.load_shader_GLSL(self.v.format(
             'spot_light_shadow'), self.f.format('spot_light_shadow'), self.shading_setup))
         # p3d_light.node().set_camera_mask(self.modelMask)
@@ -717,6 +771,11 @@ class DeferredRenderer(DirectObject):
         p3d_light.node().get_lens().set_fov(fov)
         p3d_light.node().get_lens().set_far(radius)
         p3d_light.node().get_lens().set_near(1.0)
+        #lens=OrthographicLens()
+        #lens.set_near_far(5.0, 60.0)
+        #lens.set_film_size(30, 30)
+        #p3d_light.node().set_lens(lens)
+        #p3d_light.node().showFrustum()
         return model, p3d_light
 
     def add_point_light(self, color, model="models/sphere", pos=(0, 0, 0), radius=1.0, shadow_size=0):
@@ -724,45 +783,49 @@ class DeferredRenderer(DirectObject):
         Creates a omni (point) light,
         Use the SphereLight class to create lights!!!
         """
+        #print('make light, shadow', shadow_size)
         # light geometry
         # if we got a NodePath we use it as the geom for the light
         if not isinstance(model, NodePath):
             model = loader.load_model(model)
         # self.lights.append(model)
-        model.reparent_to(self.light_root)
-        model.set_pos(pos)
-        model.set_scale(radius*1.1)
         model.set_shader(loader.load_shader_GLSL(self.v.format(
-            'light'), self.f.format('light'), self.shading_setup))
+            'point_light'), self.f.format('point_light'), self.shading_setup))
         model.set_attrib(DepthTestAttrib.make(RenderAttrib.MLess))
         model.set_attrib(CullFaceAttrib.make(
             CullFaceAttrib.MCullCounterClockwise))
         model.set_attrib(ColorBlendAttrib.make(
             ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
         model.set_attrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
-        # shader inpts
-        model.set_shader_input("light", Vec4(color, radius * radius))
-        model.set_shader_input("light_pos", Vec4(pos, 1.0))
+
+        p3d_light = render.attach_new_node(PointLight("PointLight"))
+        p3d_light.set_pos(render, pos)
+
         if shadow_size > 0:
             model.set_shader(loader.load_shader_GLSL(self.v.format(
-                'light_shadow'), self.f.format('light_shadow'), self.shading_setup))
-            p3d_light = render.attach_new_node(PointLight("PointLight"))
-            p3d_light.set_pos(render, pos)
+                'point_light_shadow'), self.f.format('point_light_shadow'), self.shading_setup))
             p3d_light.node().set_shadow_caster(True, shadow_size, shadow_size)
-            #p3d_light.node().set_camera_mask(self.modelMask)
             p3d_light.node().set_camera_mask(BitMask32.bit(13))
-            #p3d_light.node().showFrustum()
             for i in range(6):
                 p3d_light.node().get_lens(i).set_near_far(0.1, radius)
-                #p3d_light.node().get_lens(i).makeBounds()
-            #p3d_light.node().setBounds(OmniBoundingVolume())
-            #p3d_light.node().setFinal(True)
+                p3d_light.node().get_lens(i).make_bounds()
 
-            model.set_shader_input("shadowcaster", p3d_light)
-            model.set_shader_input("near", 0.1)
-            model.set_shader_input("bias", (1.0/radius)*0.095)
-        else:
-            p3d_light = render.attach_new_node('dummy_node')
+        # shader inputs
+        try:
+            model.set_shader_inputs(light= Vec4(color, radius * radius),
+                                shadowcaster= p3d_light,
+                                near= 0.1,
+                                bias= (1.0/radius)*0.095)
+        except AttributeError:
+            model.set_shader_input('light', Vec4(color, radius * radius))
+            model.set_shader_input('shadowcaster', p3d_light)
+            model.set_shader_input('near',0.1)
+            model.set_shader_input('bias', (1.0/radius)*0.095)
+
+        model.reparent_to(self.light_root)
+        model.set_pos(pos)
+        model.set_scale(radius*1.1)
+
         return model, p3d_light
 
     def _make_FBO(self, name, auxrgba=0, multisample=0, srgb=False):
@@ -777,14 +840,15 @@ class DeferredRenderer(DirectObject):
         winprops = WindowProperties()
         props = FrameBufferProperties()
         props.set_rgb_color(True)
-        props.set_rgba_bits(8, 8, 8, 8)
-        props.set_depth_bits(16)
-        props.set_aux_rgba(auxrgba)
+        props.set_rgba_bits(8,8,8,8)
+        props.set_depth_bits(32)
+        props.set_aux_hrgba(auxrgba)
+        #props.set_aux_rgba(auxrgba)
         props.set_srgb_color(srgb)
         if multisample>0:
             props.set_multisamples(multisample)
         return base.graphicsEngine.make_output(
-            base.pipe, name, -2,
+            base.pipe, name, 2,
             props, winprops,
             GraphicsPipe.BFSizeTrackHost | GraphicsPipe.BFCanBindEvery |
             GraphicsPipe.BFRttCumulative | GraphicsPipe.BFRefuseWindow,
@@ -792,9 +856,13 @@ class DeferredRenderer(DirectObject):
 
     def _update(self, task):
         """
-        Update task, currently only updates the forward rendering camera pos/hpr
+        Update task
         """
         self.plain_cam.set_pos_hpr(base.cam.get_pos(render), base.cam.get_hpr(render))
+
+        for node, light, offset in self.attached_lights.values():
+            if not node.is_empty():
+                light.set_pos(render.get_relative_point(node, offset))
         return task.again
 
 # this will replace the default Loader
@@ -821,59 +889,60 @@ class WrappedLoader(object):
                 camel_case+=char
         return camel_case
 
-    #@lru_cache(maxsize=64)
     def __getattr__(self,attr):
         new_attr=self._from_snake_case(attr)
         if hasattr(self, new_attr):
             return self.__getattribute__(new_attr)
 
     def fix_transparency(self, model):
-        for tex_stage in model.findAllTextureStages():
-            tex = model.findTexture(tex_stage)
+        for tex_stage in model.find_all_texture_stages():
+            tex = model.find_texture(tex_stage)
             if tex:
-                mode = tex_stage.getMode()
-                tex_format = tex.getFormat()
+                mode = tex_stage.get_mode()
+                tex_format = tex.get_format()
                 if mode == TextureStage.M_modulate and (tex_format == Texture.F_rgba or tex_format == Texture.F_srgb_alpha):
                     return
-        model.setTransparency(TransparencyAttrib.MNone, 1)
+        model.set_transparency(TransparencyAttrib.MNone, 1)
         #model.clear_transparency()
 
     def fixSrgbTextures(self, model):
-        for tex_stage in model.findAllTextureStages():
-            tex = model.findTexture(tex_stage)
+        for tex_stage in model.find_all_texture_stages():
+            tex = model.find_texture(tex_stage)
             if tex:
-                file_name = tex.getFilename()
-                tex_format = tex.getFormat()
+                file_name = tex.get_filename()
+                tex_format = tex.get_format()
                 # print( tex_stage,  file_name, tex_format)
-                if tex_stage.getMode() == TextureStage.M_normal:
-                    tex_stage.setMode(TextureStage.M_normal_gloss)
-                if tex_stage.getMode() != TextureStage.M_normal_gloss:
+                if tex_stage.get_mode() == TextureStage.M_normal:
+                    tex_stage.get_mode(TextureStage.M_normal_gloss)
+                if tex_stage.get_mode() != TextureStage.M_normal_gloss:
                     if tex_format == Texture.F_rgb:
                         tex_format = Texture.F_srgb
                     elif tex_format == Texture.F_rgba:
                         tex_format = Texture.F_srgb_alpha
-                tex.setFormat(tex_format)
-                model.setTexture(tex_stage, tex, 1)
+                tex.set_format(tex_format)
+                model.set_texture(tex_stage, tex, 1)
 
-    def setTextureInputsRecursive(self, model):
-        for child in model.get_children():
+    def setTextureInputs(self, node):
+        for child in node.get_children():
+            #print(child)
+            self._setTextureInputs(child)
             self.setTextureInputs(child)
-            self.setTextureInputsRecursive(child)
 
-    def setTextureInputs(self, model):
+
+    def _setTextureInputs(self, model):
         #print ('Fixing model', model)
         slots_filled = set()
         # find all the textures, easy mode - slot is fitting the stage mode
         # (eg. slot0 is diffuse/color)
-        for slot, tex_stage in enumerate(model.findAllTextureStages()):
+        for slot, tex_stage in enumerate(model.find_all_texture_stages()):
             if slot >= len(self.texture_shader_inputs):
-                slot=0
-            tex = model.findTexture(tex_stage)
+                break
+            tex = model.find_texture(tex_stage)
             if tex:
                 #print('Found tex:', tex.getFilename())
-                mode = tex_stage.getMode()
+                mode = tex_stage.get_mode()
                 if mode in self.texture_shader_inputs[slot]['stage_modes']:
-                    model.setShaderInput(self.texture_shader_inputs[
+                    model.set_shader_input(self.texture_shader_inputs[
                                          slot]['input_name'], tex)
                     slots_filled.add(slot)
         # did we get all of them?
@@ -886,13 +955,13 @@ class WrappedLoader(object):
             if slot >= len(self.texture_shader_inputs):
                 break
             if slot in missing_slots:
-                tex = model.findTexture(tex_stage)
+                tex = model.find_texture(tex_stage)
                 if tex:
-                    mode = tex_stage.getMode()
+                    mode = tex_stage.get_mode()
                     for d in self.texture_shader_inputs:
                         if mode in d['stage_modes']:
                             i = self.texture_shader_inputs.index(d)
-                            model.setShaderInput(self.texture_shader_inputs[
+                            model.set_shader_input(self.texture_shader_inputs[
                                                  i]['input_name'], tex)
                             slots_filled.add(i)
         # did we get all of them this time?
@@ -903,7 +972,7 @@ class WrappedLoader(object):
         #print ('Fail for model:', model)
         # set defaults
         for slot in missing_slots:
-            model.setShaderInput(self.texture_shader_inputs[slot][
+            model.set_shader_input(self.texture_shader_inputs[slot][
                                  'input_name'], self.texture_shader_inputs[slot]['default_texture'])
 
     def destroy(self):
@@ -917,7 +986,7 @@ class WrappedLoader(object):
 
         if self.use_srgb:
             self.fixSrgbTextures(model)
-        self.setTextureInputsRecursive(model)
+        self.setTextureInputs(model)
         self.fix_transparency(model)
         return model
 
@@ -1077,7 +1146,7 @@ class SceneLight(object):
             deferred_renderer.set_directional_light(
                 color, direction, shadow_size)
             self.__color[name] = Vec3(color)
-            self.__direction[name] = Vec3(direction)
+            self.__direction[name] = Vec3(*direction)
             self.__shadow_size[name] = shadow_size
         else:
             self.__color[name] = Vec3(color)
@@ -1086,10 +1155,10 @@ class SceneLight(object):
             num_lights = len(self.__color)
             colors = PTALVecBase3f()
             for v in self.__color.values():
-                colors.pushBack(v)
+                colors.push_back(v)
             directions = PTALVecBase3f()
             for v in self.__direction.values():
-                directions.pushBack(v)
+                directions.push_back(v)
             deferred_renderer.set_filter_define(
                 'final_light', 'NUM_LIGHTS', num_lights)
             deferred_renderer.set_filter_input(
@@ -1121,10 +1190,10 @@ class SceneLight(object):
                 num_lights = len(self.__color)
                 colors = PTALVecBase3f()
                 for v in self.__color.values():
-                    colors.pushBack(v)
+                    colors.push_back(v)
                 directions = PTALVecBase3f()
                 for v in self.__direction.values():
-                    directions.pushBack(v)
+                    directions.push_back(v)
                 deferred_renderer.set_filter_define(
                     'final_light', 'NUM_LIGHTS', num_lights)
                 deferred_renderer.set_filter_input(
@@ -1147,7 +1216,7 @@ class SceneLight(object):
         else:
             colors = PTALVecBase3f()
             for v in self.__color.values():
-                colors.pushBack(v)
+                colors.push_back(v)
             deferred_renderer.set_filter_input(
                     'final_light', 'light_color', colors)
 
@@ -1164,7 +1233,7 @@ class SceneLight(object):
         else:
             directions = PTALVecBase3f()
             for v in self.__direction.values():
-                directions.pushBack(v)
+                directions.push_back(v)
             deferred_renderer.set_filter_input(
                     'final_light', 'direction', directions)
 
@@ -1198,6 +1267,7 @@ class SphereLight(object):
             raise RuntimeError('You need a DeferredRenderer')
         self.__radius = radius
         self.__color = color
+        self.light_id=None
         if shadow_size is None:
             shadow_size=deferred_renderer.shadow_size
         self.geom, self.p3d_light = deferred_renderer.add_point_light(color=color,
@@ -1205,20 +1275,54 @@ class SphereLight(object):
                                                                       pos=pos,
                                                                       radius=radius,
                                                                       shadow_size=shadow_size)
-        if shadow_bias:
-            self.set_shadow_bias(shadow_bias)
+        self.set_shadow_bias(shadow_bias)
+
+    def attach_to(self, node, offset=(0,0,0)):
+        self.light_id=len(deferred_renderer.attached_lights)
+        deferred_renderer.attached_lights[self.light_id]=(node, self, Point3(*offset))
+
+    def detach(self):
+        if self.light_id:
+            del deferred_renderer.attached_lights[self.light_id]
 
     def set_shadow_size(self, size):
-        self.p3d_light.node().set_shadow_caster(True, size, size)
+        if size >0:
+            self.p3d_light.node().set_shadow_caster(True, size, size)
+            self.p3d_light.node().set_camera_mask(BitMask32.bit(13))
+            for i in range(6):
+                self.p3d_light.node().get_lens(i).set_near_far(0.1, self.__radius)
+                self.p3d_light.node().get_lens(i).make_bounds()
+
+            shader=loader.load_shader_GLSL(deferred_renderer.v.format('point_light_shadow'),
+                                           deferred_renderer.f.format('point_light_shadow'),
+                                           deferred_renderer.shading_setup)
+            self.geom.set_shader(shader)
+            self.geom.set_shader_input('shadowcaster', self.p3d_light)
+            self.set_shadow_bias(self.shadow_bias)
+        else:
+            self.p3d_light.node().set_shadow_caster(False)
+            shader=loader.load_shader_GLSL(deferred_renderer.v.format('point_light'),
+                                           deferred_renderer.f.format('point_light'),
+                                           deferred_renderer.shading_setup)
+            self.geom.set_shader(shader)
+            try:
+                buff = self.p3d_light.node().get_shadow_buffer(base.win.get_gsg())
+                buff.clear_render_textures()
+                base.win.get_gsg().get_engine().remove_window(buff)
+            except:
+                pass
 
     def set_shadow_bias(self, bias):
-        self.geom.setShaderInput("bias", bias)
+        self.shadow_bias=bias
+        if bias is not None:
+            self.geom.set_shader_input("bias", bias)
+
 
     def set_color(self, color):
         """
         Sets light color
         """
-        self.geom.setShaderInput("light", Vec4(
+        self.geom.set_shader_input("light", Vec4(
             color, self.__radius * self.__radius))
         self.__color = color
 
@@ -1226,12 +1330,12 @@ class SphereLight(object):
         """
         Sets light radius
         """
-        self.geom.setShaderInput("light", Vec4(self.__color, radius * radius))
-        self.geom.setScale(radius)
+        self.geom.set_shader_input("light", Vec4(self.__color, radius * radius))
+        self.geom.set_scale(radius)
         self.__radius = radius
         try:
             for i in range(6):
-                self.p3d_light.node().getLens(i).setNearFar(0.1, radius)
+                self.p3d_light.node().get_lens(i).set_near_far(0.1, radius)
         except:
             pass
 
@@ -1240,16 +1344,18 @@ class SphereLight(object):
         Sets light position,
         you can pass in a NodePath as the first argument to make the pos relative to that node
         """
+        if self.geom.is_empty():
+            return
         if len(args) < 1:
             return
         elif len(args) == 1:  # one arg, must be a vector
             pos = Vec3(args[0])
         elif len(args) == 2:  # two args, must be a node and  vector
-            pos = render.getRelativePoint(args[0], Vec3(args[1]))
+            pos = render.get_relative_point(args[0], Vec3(args[1]))
         elif len(args) == 3:  # vector
             pos = Vec3(args[0], args[1], args[2])
         elif len(args) == 4:  # node and vector?
-            pos = render.getRelativePoint(
+            pos = render.get_relative_point(
                 args[0], Vec3(args[0], args[1], args[2]))
         else:  # something ???
             pos = Vec3(args[0], args[1], args[2])
@@ -1258,25 +1364,28 @@ class SphereLight(object):
         self.p3d_light.set_pos(render, pos)
 
     def remove(self):
-        self.geom.removeNode()
+        self.geom.remove_node()
         try:
-            buff = self.p3d_light.node().getShadowBuffer(base.win.getGsg())
-            buff.clearRenderTextures()
-            base.win.getGsg().getEngine().removeWindow(buff)
-            self.p3d_light.node().setShadowCaster(False)
+            buff = self.p3d_light.node().get_shadow_buffer(base.win.get_gsg())
+            buff.clear_render_textures()
+            base.win.get_gsg().get_engine().remove_window(buff)
+            self.p3d_light.node().set_shadow_caster(False)
         except:
             pass
-        self.p3d_light.removeNode()
+        if self.light_id and self.light_id in deferred_renderer.attached_lights:
+            del deferred_renderer.attached_lights[self.light_id]
+        self.p3d_light.remove_node()
 
     def __del__(self):
         try:
-            self.remove()
+            if not self.geom.is_empty():
+                self.remove()
         except:
             pass
 
     @property
     def pos(self):
-        return self.geom.getPos(render)
+        return self.geom.get_pos(render)
 
     @pos.setter
     def pos(self, p):
@@ -1318,7 +1427,8 @@ class ConeLight(object):
     the lookAt() function can also be used to set a hpr in a different way
     """
 
-    def __init__(self, color, pos, radius, fov, hpr=None, look_at=None, shadow_size=0):
+    def __init__(self, color, pos, radius, fov, hpr=None,
+                look_at=None, exponent=40, shadow_size=0, bias=0.0005):
         if not hasattr(builtins, 'deferred_renderer'):
             raise RuntimeError('You need a DeferredRenderer')
         self.__radius = radius
@@ -1326,22 +1436,25 @@ class ConeLight(object):
         self.__pos = pos
         self.__hpr = hpr
         self.__fov = fov
-        self.shadow_size = shadow_size
+        self.__shadow_size = shadow_size
+        self.__shadow_bias=bias
         if hpr is None:
-            dummy = render.attachNewNode('dummy')
+            dummy = render.attach_new_node('dummy')
             dummy.set_pos(pos)
-            dummy.lookAt(look_at)
-            hpr = dummy.getHpr(render)
-            dummy.removeNode()
+            dummy.look_at(look_at)
+            hpr = dummy.get_hpr(render)
+            dummy.remove_node()
         self.__hpr = hpr
         self.geom, self.p3d_light = deferred_renderer.add_cone_light(color=color,
                                                                      pos=pos,
                                                                      hpr=hpr,
+                                                                     exponent=exponent,
                                                                      radius=radius,
                                                                      fov=fov,
-                                                                     shadow_size=shadow_size)
-    def set_color(self, color):
-        self.p3d_light.node().set_color(Vec4(color))
+                                                                     shadow_size=shadow_size,
+                                                                     bias=bias)
+    def set_exponent(self, exponent):
+        self.p3d_light.node().set_exponent(exponent)
 
     def set_fov(self, fov):
         """
@@ -1351,29 +1464,35 @@ class ConeLight(object):
         """
         if fov > 179.0:
             fov = 179.0
-        self.p3d_light.node().getLens().set_fov(fov)
+        self.p3d_light.node().get_lens().set_fov(fov)
         # we might as well start from square 1...
-        self.geom.removeNode()
+        self.geom.remove_node()
         xy_scale = math.tan(deg2Rad(fov * 0.5))
         self.geom = loader.load_model("models/cone")
-        self.geom.reparentTo(deferred_renderer.light_root)
-        self.geom.setScale(xy_scale, 1.0, xy_scale)
-        self.geom.flattenStrong()
-        self.geom.setScale(self.__radius)
+        self.geom.reparent_to(deferred_renderer.light_root)
+        self.geom.set_scale(xy_scale, 1.0, xy_scale)
+        self.geom.flatten_strong()
+        self.geom.set_scale(self.__radius)
         self.geom.set_pos(self.__pos)
-        self.geom.setHpr(self.__hpr)
-        self.geom.setAttrib(DepthTestAttrib.make(RenderAttrib.MLess))
-        self.geom.setAttrib(CullFaceAttrib.make(
-            CullFaceAttrib.MCullCounterClockwise))
+        self.geom.set_hpr(self.__hpr)
+        self.geom.set_attrib(DepthTestAttrib.make(RenderAttrib.MLess))
+        self.geom.set_attrib(CullFaceAttrib.make(
+            set_attrib.MCullCounterClockwise))
         self.geom.setAttrib(ColorBlendAttrib.make(
-            ColorBlendAttrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
-        self.geom.setAttrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
-        self.geom.setShader(loader.loadShaderGLSL(deferred_renderer.v.format(
+            set_attrib.MAdd, ColorBlendAttrib.OOne, ColorBlendAttrib.OOne))
+        self.geom.set_attrib(DepthWriteAttrib.make(DepthWriteAttrib.MOff))
+        self.geom.set_shader(loader.loadShaderGLSL(deferred_renderer.v.format(
             'spot_light'), deferred_renderer.f.format('spot_light'), deferred_renderer.shading_setup))
-        self.geom.set_shader_input("light_radius", float(self.__radius))
-        self.geom.set_shader_input("light_pos", Vec4(self.__pos, 1.0))
-        self.geom.set_shader_input("light_fov", deg2Rad(fov))
-        self.geom.set_shader_input("spot", self.p3d_light)
+        try:
+            self.geom.set_shader_inputs(light_radius= float(self.__radius),
+                                    light_pos= Vec4(self.__pos, 1.0),
+                                    light_fov= deg2Rad(fov),
+                                    spot= self.p3d_light)
+        except AttributeError:
+            self.geom.set_shader_input('light_radius', float(self.__radius))
+            self.geom.set_shader_input('light_pos', Vec4(self.__pos, 1.0))
+            self.geom.set_shader_input('light_fov', deg2Rad(fov))
+            self.geom.set_shader_input('spot', self.p3d_light)
         self.__fov = fov
 
     def set_radius(self, radius):
@@ -1432,16 +1551,21 @@ class ConeLight(object):
         self.p3d_light.look_at(node_or_pos)
         self.__hpr = self.p3d_light.get_hpr(render)
 
+    def set_shadow_bias(self, bias):
+        self.__shadow_bias=bias
+        if bias is not None:
+            self.geom.set_shader_input("bias", bias)
+
     def remove(self):
         self.geom.removeNode()
         try:
-            buff = self.p3d_light.node().get_shadow_buffer(base.win.getGsg())
+            buff = self.p3d_light.node().get_shadow_buffer(base.win.get_gsg())
             buff.clear_render_textures()
             base.win.get_gsg().get_engine().remove_window(buff)
             self.p3d_light.node().set_shadow_caster(False)
         except:
             pass
-        self.p3d_light.removeNode()
+        self.p3d_light.remove_node()
 
     def __del__(self):
         try:
@@ -1459,7 +1583,7 @@ class ConeLight(object):
 
     @property
     def hpr(self):
-        return self.geom.getHpr(render)
+        return self.geom.get_hpr(render)
 
     @hpr.setter
     def hpr(self, p):
@@ -1467,7 +1591,7 @@ class ConeLight(object):
 
     @property
     def pos(self):
-        return self.geom.getPos(render)
+        return self.geom.get_pos(render)
 
     @pos.setter
     def pos(self, p):
