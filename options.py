@@ -60,7 +60,9 @@ class Options():
         gfx_config = configparser.ConfigParser()
         try:
             gfx_config.read(config_file)
-        except:
+        except Exception as err:
+            print('error reading config file', config_file)
+            print(err)
             return None, None
         preset=[x for x in gfx_config.sections() if x  not in ('SETUP','SHADOWS')]
         setup={}
