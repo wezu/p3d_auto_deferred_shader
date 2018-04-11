@@ -341,19 +341,31 @@ class DeferredRenderer(DirectObject):
             self.filter_quad[stage_name].set_shader_input(str(name), value)
             # print(stage_name, name, value)
 
+    def _get_win_depth_bits(self):
+        fbprops=base.win.get_fb_properties()
+        return fbprops.get_depth_bits()
+
     def _setup_g_buffer(self, define=None):
         """
         Creates all the needed buffers, nodes and attributes for a geometry buffer
         """
-        self.modelbuffer = self._make_FBO("model buffer", 1)
-        self.lightbuffer = self._make_FBO("light buffer", 0)
+        depth_bits=self._get_win_depth_bits()
+        self.modelbuffer = self._make_FBO(name="model buffer", auxrgba=1, depth_bits=depth_bits)
+        self.lightbuffer = self._make_FBO(name="light buffer", auxrgba=0, depth_bits=depth_bits)
 
         # Create four render textures: depth, normal, albedo, and final.
         # attach them to the various bitplanes of the offscreen buffers.
         self.depth = Texture()
         self.depth.set_wrap_u(Texture.WM_clamp)
         self.depth.set_wrap_v(Texture.WM_clamp)
-        self.depth.set_format(Texture.F_depth_component32)
+        if depth_bits==32:
+            self.depth.set_format(Texture.F_depth_component32)
+        elif depth_bits==24:
+            self.depth.set_format(Texture.F_depth_component24)
+        elif depth_bits==16:
+            self.depth.set_format(Texture.F_depth_component16)
+        else:
+            self.depth.set_format(Texture.F_depth_component)
         self.depth.set_component_type(Texture.T_float)
         self.albedo = Texture()
         self.albedo.set_wrap_u(Texture.WM_clamp)
@@ -828,7 +840,7 @@ class DeferredRenderer(DirectObject):
 
         return model, p3d_light
 
-    def _make_FBO(self, name, auxrgba=0, multisample=0, srgb=False):
+    def _make_FBO(self, name, auxrgba=0, multisample=0, srgb=False, depth_bits=32):
         """
         This routine creates an offscreen buffer.  All the complicated
         parameters are basically demanding capabilities from the offscreen
@@ -841,7 +853,7 @@ class DeferredRenderer(DirectObject):
         props = FrameBufferProperties()
         props.set_rgb_color(True)
         props.set_rgba_bits(8,8,8,8)
-        props.set_depth_bits(32)
+        props.set_depth_bits(depth_bits)
         props.set_aux_hrgba(auxrgba)
         #props.set_aux_rgba(auxrgba)
         props.set_srgb_color(srgb)
