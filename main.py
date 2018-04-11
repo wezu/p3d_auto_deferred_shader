@@ -17,6 +17,53 @@ from deferred_render import *
 from camera import CameraControler
 from options import Options
 
+config_full={'shadows': 1024,
+            'shading_setup': {'FORWARD_SIZE': 1, 'DISABLE_POM': 1, 'FORWARD_AUX': 1},
+            'filter_setup': [{'inputs': {'random_tex': 'tex/noise.png', 'amount': 0.9, 'strength': 0.7, 'sample_rad': 0.01, 'falloff': 1.0},
+                            'name': 'ao_basic',
+                            'shader': 'ao'},
+                            {'translate_tex_name': {'ao_basic': 'input_tex'},
+                            'inputs': {'blur': 2.5},
+                            'size': 0.5,
+                            'name': 'ao',
+                            'shader': 'blur'},
+                            {'inputs': {'direction': LVector3f(0, 0, 0),
+                            'ambient': LVector3f(0.02, 0.01, 0.01),
+                            'light_color': LVector3f(0, 0, 0)},
+                            'name': 'final_light',
+                            'shader': 'dir_light'},
+                            {'inputs': {'desat': 0.2, 'scale': 10.0, 'power': 2.0},
+                            'size': 0.5,
+                            'name': 'base_bloom',
+                            'shader': 'bloom'},
+                            {'translate_tex_name': {'base_bloom': 'input_tex'},
+                            'inputs': {'blur': 3.0},
+                            'size': 0.5,
+                            'name': 'bloom',
+                            'shader': 'blur'},
+                            {'shader': 'ssr',
+                            'name': 'base_ssr',
+                            'define': {'maxDelta': 0.044, 'rayLength': 0.034, 'stepsCount': 16, 'fade': 0.3}},
+                            {'inputs': {'noise_tex': 'tex/noise.png', 'blur': 6.0},
+                            'name': 'ssr',
+                            'shader': 'ref_blur'},
+                            {'translate_tex_name': {'final_light': 'final_color'},
+                            'inputs': {'noise_tex': 'tex/noise.png', 'lut_tex': 'tex/new_lut_nearest_f_rgb16_clamp.png'},
+                            'name': 'compose',
+                            'shader': 'mix'},
+                            {'translate_tex_name': {'compose': 'input_tex'},
+                            'inputs': {'fog_start': 20.0, 'dof_far_start': 15.0, 'dof_near': 5.0, 'fog_color': LVector3f(0.831, 0.831, 0.874), 'dof_far_max': 60.0, 'fog_max': 70.0},
+                            'shader': 'fog'},
+                            {'translate_tex_name': {'fog': 'input_tex'},
+                            'inputs': {'blur': 6.0},
+                            'shader': 'dof'},
+                            {'translate_tex_name': {'dof': 'input_tex'},
+                            'name': 'pre_aa',
+                            'shader': 'chroma'},
+                            {'inputs': {'subpix_shift': 0.125, 'span_max': 2.0, 'reduce_mul': 0.0625},
+                            'shader': 'fxaa'}]
+            }
+
 
 class Demo(DirectObject):
     def __init__(self):
@@ -27,6 +74,9 @@ class Demo(DirectObject):
         #get the preset and setup
         options=Options('presets/full.ini')
         DeferredRenderer(**options.get())
+        #if getting options from a ini fail just use the dict..
+        #DeferredRenderer(**config_full)
+
         #set some other options...
         deferred_renderer.set_near_far(1.0,200.0)
         deferred_renderer.set_cubemap('tex/cube/skybox_#.png')
