@@ -3,7 +3,7 @@
 in vec2 uv;
 uniform sampler2D forward_tex;
 uniform sampler2D final_color;
-uniform sampler2D normal_tex;;
+uniform sampler2D normal_tex;
 uniform vec4 brightness_contrast;
 #ifndef DISABLE_LUT
 uniform sampler2D lut_tex;
